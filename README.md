@@ -65,7 +65,8 @@ launcher/               → AppPaths (Value Object), DataBootstrapper (Strategy)
 services/               → robot_service / engine_service (BAEL+RPS) / dxf_service / report_service
 gateway/                → passerelle + tableau de bord web (8 modules)
 referentiels/           → bael.json, rps.json (tables officielles) + bureau.json (vos données)
-docs/ARCHITECTURE_LANCEUR.md → UML complet, design patterns, cycle de vie
+docs/ARCHITECTURE_LANCEUR.md → UML lanceur (composants, classes, séquence) + design patterns
+docs/CAS_USAGE.md            → diagramme de cas d'usage (Ingénieur BET + Robot RSA) + scénarios détaillés
 ```
 
 ### Diagramme de composants

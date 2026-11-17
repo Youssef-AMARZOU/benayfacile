@@ -1,5 +1,6 @@
 # Benayfacile.exe — architecture du lanceur, design patterns et UML
 
+> Voir aussi docs/CAS_USAGE.md — diagramme de cas d'usage et scénarios détaillés.
 > Portée : ce document décrit **le lanceur autonome** (`bnayfacile_app.py` +
 > `launcher/`). Le moteur de calcul BAEL/RPS n'est pas modifié ; seule la ligne
 > qui localise `referentiels/` et `output/` lit désormais `BNAY_DATA`.
