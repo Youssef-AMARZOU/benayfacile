@@ -59,19 +59,177 @@ docker compose up --build
 ## Architecture
 
 ```
-benayfacile_app.py      → lanceur (1 processus, 5 serveurs threads)
+bnayfacile_app.py      → lanceur (1 processus, 5 serveurs threads)
 launcher/               → AppPaths (Value Object), DataBootstrapper (Strategy),
-                          ManagedServer (Adapter), BnayfacileApp (Facade)
+                          ManagedServer (Adapter), BenayfacileApp (Facade)
 services/               → robot_service / engine_service (BAEL+RPS) / dxf_service / report_service
 gateway/                → passerelle + tableau de bord web (8 modules)
 referentiels/           → bael.json, rps.json (tables officielles) + bureau.json (vos données)
-docs/ARCHITECTURE_LANCEUR.md → UML, design patterns, cycle de vie
+docs/ARCHITECTURE_LANCEUR.md → UML complet, design patterns, cycle de vie
 ```
+
+### Diagramme de composants
+
+```mermaid
+flowchart LR
+    U[Ingénieur BET<br/>navigateur] -->|http://127.0.0.1:8090| GW
+    subgraph EXE["Benayfacile.exe — 1 processus"]
+        L[BenayfacileApp<br/>Facade] --> GW[Passerelle :8090<br/>tableau de bord + proxy]
+        L --> R[robot_service :8001]
+        L --> E[engine_service :8002]
+        L --> D[dxf_service :8003]
+        L --> N[report_service :8004]
+        GW --> R & E & D & N
+    end
+    E -. lit .-> REF[(Benayfacile_donnees/<br/>referentiels/)]
+    D -. écrit .-> OUT[(Benayfacile_donnees/<br/>output/)]
+    N -. écrit .-> OUT
+    GW -. lit / écrit bureau.json .-> REF
+```
+
+### Diagramme de classes UML
+
+```mermaid
+classDiagram
+    direction LR
+    class AppPaths {
+        <<ValueObject, frozen>>
+        +bundle: Path
+        +data: Path
+        +referentiels: Path
+        +output: Path
+        +detect()$ AppPaths
+    }
+    class DataBootstrapper {
+        +paths: AppPaths
+        +politiques: Dict~str, CopyPolicy~
+        +par_defaut(paths)$ DataBootstrapper
+        +preparer() list~str~
+    }
+    class CopyPolicy {
+        <<Strategy>>
+        +__call__(dest_existe: bool) bool
+    }
+    class TOUJOURS_RAFRAICHIR {
+        <<ConcreteStrategy>>
+    }
+    class SI_ABSENT {
+        <<ConcreteStrategy>>
+    }
+    class ServiceSpec {
+        <<ValueObject, frozen>>
+        +nom: str
+        +module: str
+        +port: int
+    }
+    class SERVICE_REGISTRY {
+        <<Registry>>
+        tuple~ServiceSpec~
+    }
+    class ManagedServer {
+        <<Adapter>>
+        -_server: uvicorn.Server
+        -_thread: Thread
+        +start()
+        +wait_ready(timeout_s) bool
+        +vivant: bool
+        +stop()
+    }
+    class uvicorn_Server {
+        <<Adaptee>>
+        +run()
+        +started: bool
+        +should_exit: bool
+    }
+    class BenayfacileApp {
+        <<Facade>>
+        +paths: AppPaths
+        +notifier: Notifier
+        +serveurs: List~ManagedServer~
+        +url: str
+        +demarrer(ouvrir_navigateur)
+        +attendre()
+        +arreter()
+    }
+    class Notifier {
+        <<Observer callback>>
+        +__call__(message: str)
+    }
+
+    CopyPolicy <|.. TOUJOURS_RAFRAICHIR
+    CopyPolicy <|.. SI_ABSENT
+    DataBootstrapper --> AppPaths
+    DataBootstrapper o-- CopyPolicy
+    SERVICE_REGISTRY o-- ServiceSpec
+    ManagedServer --> ServiceSpec
+    ManagedServer *-- uvicorn_Server : adapte
+    BenayfacileApp --> AppPaths
+    BenayfacileApp ..> DataBootstrapper : utilise
+    BenayfacileApp ..> SERVICE_REGISTRY : parcourt
+    BenayfacileApp *-- ManagedServer : 5
+    BenayfacileApp --> Notifier : notifie
+```
+
+### Séquence de démarrage (UML)
+
+```mermaid
+sequenceDiagram
+    actor U as Ingénieur
+    participant M as main()
+    participant F as BenayfacileApp
+    participant P as AppPaths
+    participant B as DataBootstrapper
+    participant S as ManagedServer (×5)
+    participant W as Navigateur
+
+    U->>M: double-clic Benayfacile.exe
+    M->>P: detect()
+    P-->>M: bundle=_MEIPASS, data=…/Benayfacile_donnees
+    M->>F: demarrer()
+    F->>F: os.environ["BNAY_DATA"] = data
+    Note over F: AVANT tout import des services,<br/>qui lisent BNAY_DATA à l'import
+    F->>B: par_defaut(paths).preparer()
+    B-->>F: bael/rps copiés, bureau.json conservé
+    F->>F: garde : 8001-8004 + 8090 libres ?
+    alt un port est occupé
+        F-->>M: DemarrageImpossible
+        M-->>U: message clair + « Entrée pour fermer »
+    else tous libres
+        loop pour chaque ServiceSpec du registre
+            F->>S: start()
+            F->>S: wait_ready(30 s)
+            S-->>F: started = True
+        end
+        F->>W: webbrowser.open(127.0.0.1:8090)
+        F->>F: attendre() jusqu'à Ctrl+C / fermeture
+        F->>S: stop() en ordre inverse
+    end
+```
+
+### Design patterns (lanceur)
+
+Chaque pattern règle un problème concret, pas la forme :
+
+| Pattern | Élément | Problème réglé |
+|---|---|---|
+| **Value Object** | `AppPaths`, `ServiceSpec` | Où sont les fichiers ? Réponse unique, immuable, testée une fois |
+| **Factory Method** | `AppPaths.detect()` | Choisit la résolution selon le mode d'exécution sans disperser `sys.frozen` |
+| **Strategy** | `CopyPolicy` (`TOUJOURS_RAFRAICHIR` / `SI_ABSENT`) | bael/rps = version livrée fait foi ; bureau.json = jamais écrasé |
+| **Registry** | `SERVICE_REGISTRY` | Table nom/module/port unique : garde des ports, démarrage, arrêt ; passerelle en dernier |
+| **Adapter** | `ManagedServer` | `uvicorn.Server.run()` bloquant → `start()` / `wait_ready()` / `stop()` |
+| **Facade** | `BenayfacileApp` | 6 étapes strictes cachées derrière `demarrer()` / `attendre()` / `arreter()` |
+| **Observer (léger)** | `Notifier` | Démarrage indépendant de la console (future icône barre des tâches) |
+| **Guard Clause** | vérification des ports | Ports vérifiés avant tout démarrage ; sinon aucun serveur lancé |
+| **API Gateway + Proxy** | `gateway/app.py` | Point d'entrée unique `:8090`, relaie `/api/{service}/*` vers les microservices |
+
+Au premier lancement, `Benayfacile_donnees/` est créé à côté de l'exe :
+`referentiels/bael.json` et `referentiels/rps.json` (rafraîchis à chaque
+lancement — version livrée fait foi), `referentiels/bureau.json` (vos données,
+créé une fois, jamais écrasé), `output/` (notes HTML et plans DXF).
 
 Pilotage Robot : `pywin32` embarqué dans `Benayfacile.exe`. Sans Robot
 installé, le mode simulation R+4 (zone 3, site S2, classe II, K = 2,0) permet
 de tester toute la chaîne.
-
 ## Normes et sources
 
 - **BAEL 91 révisées 99** — Règles techniques de conception et de calcul des
