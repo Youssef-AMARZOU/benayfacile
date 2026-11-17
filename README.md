@@ -81,10 +81,10 @@ flowchart LR
         L --> N[report_service :8004]
         GW --> R & E & D & N
     end
-    E -. "lit" .-> REF[(Benayfacile_donnees/<br/>referentiels/)]
-    D -. "écrit" .-> OUT[(Benayfacile_donnees/<br/>output/)]
-    N -. "écrit" .-> OUT
-    GW -. "lit / écrit bureau.json" .-> REF
+    E -. lit .-> REF[(Benayfacile_donnees/<br/>referentiels/)]
+    D -. ecrit .-> OUT[(Benayfacile_donnees/<br/>output/)]
+    N -. ecrit .-> OUT
+    GW -. ecrit bureau .-> REF
 ```
 
 ### Diagramme de classes UML
