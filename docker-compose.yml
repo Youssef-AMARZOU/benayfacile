@@ -1,0 +1,35 @@
+services:
+  robot:
+    build: .
+    image: benayfacile:1.0
+    command: python services/robot_service.py
+    ports: ["8001:8001"]
+    restart: unless-stopped
+
+  engine:
+    build: .
+    command: python services/engine_service.py
+    ports: ["8002:8002"]
+    restart: unless-stopped
+
+  dxf:
+    build: .
+    command: python services/dxf_service.py
+    ports: ["8003:8003"]
+    restart: unless-stopped
+
+  report:
+    build: .
+    command: python services/report_service.py
+    ports: ["8004:8004"]
+    restart: unless-stopped
+
+  gateway:
+    build: .
+    command: python gateway/app.py
+    ports: ["8090:8090"]
+    depends_on: [robot, engine, dxf, report]
+    restart: unless-stopped
+
+# NOTE : le pilotage COM de Robot (Interop.RobotOM) exige Windows + Robot installé.
+# Sous Docker (Linux) le service robot fonctionne en mode SIMULATION.

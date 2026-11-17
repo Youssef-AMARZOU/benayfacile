@@ -1,0 +1,34 @@
+{
+  "_description": "Scénario de démonstration R+4 (Casablanca) utilisé par le bouton « Charger le scénario démo R+4 » du tableau de bord. K=2.0 (portiques BA, ND1, Tableau 3.3), site S2, classe II, zone de vitesse 3.",
+  "projet": "Immeuble R+4 — Casablanca",
+  "client": "SARL Exemple",
+  "site": "Casablanca, Maroc",
+  "robot": {"simuler": true},
+  "sismique": {
+    "hauteur_m": 15.0,
+    "longueur_contreventement_m": 12.0,
+    "g_kn": 3800,
+    "q_kn": 1200,
+    "usage": "habitation_admin",
+    "zone_vitesse": 3,
+    "rapport_za_zv": "za_eq_zv",
+    "site": "S2",
+    "classe": "classe_II",
+    "systeme": "portiques_ba",
+    "ductilite": "ND1",
+    "periode_methode": "portique",
+    "amortissement_pct": 5.0,
+    "niveaux": [
+      {"nom": "RDC", "w_kn": 950, "h_m": 0.0},
+      {"nom": "R+1", "w_kn": 820, "h_m": 3.0},
+      {"nom": "R+2", "w_kn": 820, "h_m": 6.0},
+      {"nom": "R+3", "w_kn": 820, "h_m": 9.0},
+      {"nom": "R+4", "w_kn": 700, "h_m": 12.0},
+      {"nom": "Acrotère", "w_kn": 180, "h_m": 15.0}
+    ]
+  },
+  "poteau": {"a_cm": 30, "b_cm": 30, "lf_m": 3.0, "fc28_mpa": 25, "fe_mpa": 500, "nu_kn": 950, "mx_knm": 25, "my_knm": 10},
+  "poutre": {"b_cm": 25, "h_cm": 50, "enrobage_mm": 40, "fc28_mpa": 25, "fe_mpa": 500, "mu_knm": 120, "vu_kn": 90, "fissuration": "prejudiciable"},
+  "semelle_isolee": {"ns_kn": 950, "a_poteau_cm": 30, "b_poteau_cm": 30, "sigma_sol_bar": 2.0, "fc28_mpa": 25, "fe_mpa": 500},
+  "voile": {"longueur_m": 4.0, "ep_cm": 18, "fc28_mpa": 25, "fe_mpa": 500, "n_kn": 1200, "m_knm": 260, "v_kn": 180}
+}

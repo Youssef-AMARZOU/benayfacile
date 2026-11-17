@@ -1,0 +1,14 @@
+{
+  "_note": "Données DURÉE/affichage sur les notes de calcul et dans le cartouche DXF. Modifiez ces valeurs dans le module « Données de votre bureau » (interface) — ce fichier est réécrit par le gateway.",
+  "nom": "Mon Bureau d'Études",
+  "adresse": "Adresse du bureau — Maroc",
+  "telephone": "+212 5 00 00 00 00",
+  "email": "contact@example.ma",
+  "ingenieur": "Ingénieur Structure",
+  "rc": "RC N° 00000",
+  "if_": "IF N° 00000000",
+  "ice": "ICE N° 0000000000000",
+  "patente": "Patente N° 00000000",
+  "logo_base64": "",
+  "cachet_base64": ""
+}
