@@ -241,6 +241,9 @@ def poteau_b84(a_cm: float, b_cm: float, lf_m: float, fc28: float, fe: float,
         "ferraillage": choix, "notes": note,
         "nu_lim_kn_avec_as_fournie": round(nu_lim, 1),
         "nu_kn": nu_kn, "nu_rapport": round(nu_kn / nu_lim, 3) if nu_lim > 0 else None,
+        "section_suffisante": as_calc <= as_max,
+        "warn": (f"As = {as_calc:.1f} cm² > 5 % B = {as_max:.1f} cm² (BAEL A.8.1,22) : "
+                 "section de béton insuffisante, augmenter a × b.") if as_calc > as_max else None,
     }
 
 
@@ -697,6 +700,133 @@ def sismique(inp: SismiqueInput):
 @app.get("/bars")
 def bars():
     return {"diametres_mm": [8, 10, 12, 14, 16, 20, 25, 32], "sections_cm2": {d: round(section_bar(d), 2) for d in [8, 10, 12, 14, 16, 20, 25, 32]}}
+
+# ───────────── calcul en lot : tout le modèle Robot en une requête ─────────────
+
+class Materiaux(BaseModel):
+    fc28_mpa: float = 25.0
+    fe_mpa: float = 500.0
+    sigma_sol_bar: float = Field(2.0, gt=0)
+    enrobage_poteau_mm: float = 30.0
+    enrobage_poutre_mm: float = 40.0
+    enrobage_semelle_mm: float = 50.0
+    fissuration: str = "prejudiciable"
+
+
+class LotInput(BaseModel):
+    """Ossature produite par le service Robot (voir robot_ossature.py)."""
+    poteaux: List[dict] = []
+    poutres: List[dict] = []
+    semelles: List[dict] = []
+    voiles: List[dict] = []
+    materiaux: Materiaux = Materiaux()
+
+
+def _verdict_poteau(r: dict) -> List[str]:
+    pb = []
+    if not r.get("applicable_b841", True):
+        pb.append("λ > 70 : méthode forfaitaire non applicable")
+    if (r.get("nu_rapport") or 0) > 1.0:
+        pb.append(f"Nu/Nu,lim = {r['nu_rapport']} > 1")
+    if r.get("section_suffisante") is False:
+        pb.append(f"As = {r['as_calculee_cm2']} cm² > 5 % B = {r['as_max_5pct_cm2']} cm² : section trop petite")
+    tm = (r.get("flexion_composee") or {}).get("taux_utilisation_moment")
+    if isinstance(tm, (int, float)) and tm > 1.0:
+        pb.append(f"taux d'utilisation en flexion composée = {tm} > 1")
+    return pb
+
+
+def _verdict_poutre(r: dict) -> List[str]:
+    pb = []
+    if not (r.get("els") or {}).get("sigma_st_ok", True):
+        pb.append("σst ELS dépassée")
+    if not (r.get("effort_tranchant") or {}).get("tau_u_ok", True):
+        pb.append("τu > τu,lim")
+    if r.get("mode") != "simple":
+        pb.append("aciers comprimés nécessaires (μ > μlim)")
+    return pb
+
+
+def _verdict_semelle(r: dict) -> List[str]:
+    pb = []
+    if not r["poinconnement"]["ok"]:
+        pb.append("poinçonnement non vérifié")
+    if r.get("sigma_min_bar", 0) < 0:
+        pb.append("traction sous la semelle")
+    return pb
+
+
+def _verdict_voile(r: dict) -> List[str]:
+    pb = []
+    if not r.get("compression_ok", True):
+        pb.append("compression > 0,6 fc28")
+    if not r.get("tau_ok", True):
+        pb.append("τu > τu,lim")
+    return pb
+
+
+def _manquants(el: dict, champs: List[str]) -> List[str]:
+    return [c for c in champs if el.get(c) is None]
+
+
+@app.post("/lot")
+def lot(inp: LotInput):
+    """Calcule chaque élément ; un élément incomplet ou en erreur est signalé, jamais ignoré."""
+    m = inp.materiaux
+    sorties = {"poteaux": [], "poutres": [], "semelles": [], "voiles": []}
+
+    def traiter(famille: str, el: dict, requis: List[str], construire, calculer, verdict):
+        ligne = {"id": el.get("id"), "nom": el.get("nom"), "niveau": el.get("niveau"),
+                 "axe": el.get("axe"), "entree": el}
+        manque = _manquants(el, requis)
+        if manque:
+            ligne.update(statut="incomplet", problemes=[f"donnée manquante : {', '.join(manque)}"])
+        else:
+            try:
+                res = calculer(construire(el))
+                pb = verdict(res)
+                ligne.update(resultat=res, statut="a_revoir" if pb else "verifie", problemes=pb)
+            except HTTPException as e:
+                ligne.update(statut="erreur", problemes=[str(e.detail)])
+            except Exception as e:   # entrée hors domaine (pydantic, calcul)
+                ligne.update(statut="erreur", problemes=[str(e).splitlines()[0][:200]])
+        sorties[famille].append(ligne)
+
+    for el in inp.poteaux:
+        traiter("poteaux", el, ["a_cm", "b_cm", "lf_m", "nu_kn"],
+                lambda e: PoteauInput(a_cm=e["a_cm"], b_cm=e["b_cm"], lf_m=e["lf_m"], nu_kn=e["nu_kn"],
+                                      mx_knm=e.get("mx_knm") or 0.0, my_knm=e.get("my_knm") or 0.0,
+                                      fc28_mpa=m.fc28_mpa, fe_mpa=m.fe_mpa, cover_mm=m.enrobage_poteau_mm),
+                poteau, _verdict_poteau)
+    for el in inp.poutres:
+        traiter("poutres", el, ["b_cm", "h_cm", "mu_knm"],
+                lambda e: PoutreInput(b_cm=e["b_cm"], h_cm=e["h_cm"], mu_knm=e["mu_knm"],
+                                      vu_kn=e.get("vu_kn") or 0.0, ms_knm=e.get("ms_knm"),
+                                      enrobage_mm=m.enrobage_poutre_mm, fc28_mpa=m.fc28_mpa,
+                                      fe_mpa=m.fe_mpa, fissuration=m.fissuration),
+                poutre, _verdict_poutre)
+    for el in inp.semelles:
+        traiter("semelles", el, ["ns_kn", "a_poteau_cm", "b_poteau_cm"],
+                lambda e: SemelleInput(ns_kn=e["ns_kn"], nu_kn=e.get("nu_kn"),
+                                       Mx_knm=e.get("mx_knm") or 0.0, My_knm=e.get("my_knm") or 0.0,
+                                       a_poteau_cm=e["a_poteau_cm"], b_poteau_cm=e["b_poteau_cm"],
+                                       sigma_sol_bar=m.sigma_sol_bar, fc28_mpa=m.fc28_mpa,
+                                       fe_mpa=m.fe_mpa, cover_mm=m.enrobage_semelle_mm),
+                semelle, _verdict_semelle)
+    for el in inp.voiles:
+        traiter("voiles", el, ["longueur_m", "ep_cm", "n_kn"],
+                lambda e: VoileInput(longueur_m=e["longueur_m"], ep_cm=e["ep_cm"], n_kn=e["n_kn"],
+                                     m_knm=e.get("m_knm") or 0.0, v_kn=e.get("v_kn") or 0.0,
+                                     fc28_mpa=m.fc28_mpa, fe_mpa=m.fe_mpa, fissuration=m.fissuration),
+                voile, _verdict_voile)
+
+    resume = {"total": 0, "verifie": 0, "a_revoir": 0, "incomplet": 0, "erreur": 0}
+    for lignes in sorties.values():
+        for l in lignes:
+            resume["total"] += 1
+            resume[l["statut"]] += 1
+    return {**sorties, "resume": resume, "materiaux": m.model_dump()}
+
 
 if __name__ == '__main__':
     import uvicorn

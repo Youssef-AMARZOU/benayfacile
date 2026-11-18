@@ -14,6 +14,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from robot_ossature import extraire_ossature_com, ossature_simulation
+
 HERE = pathlib.Path(__file__).resolve().parent
 # BNAY_DATA : dossier de données inscriptible (fixé par le lanceur .exe)
 DATA = pathlib.Path(__import__("os").environ.get("BNAY_DATA", str(HERE.parent)))
@@ -59,13 +61,17 @@ def modele_simulation() -> dict:
                          "Séisme ELU (1.35 G + 1.5 Q + E)", "Séisme ELS"],
         "modal": {"T1_s": 0.62, "T2_s": 0.55, "T3_s": 0.41, "masse_participante_pct": 92.4},
         "rps": {"zone": 3, "site": "S2", "classe": "II", "K": 2.0, "I": 1.2, "S": 1.2},
+        "ossature": ossature_simulation(),
         "notes": ["Modèle SIMULÉ (Robot non piloté). Pour un modèle réel : lancer Robot, ouvrir le projet, puis POST /extract."],
     }
 
 
-def extraire_com() -> dict:
+def extraire_com(cas_elu: Optional[int] = None, cas_els: Optional[int] = None) -> dict:
     import win32com.client  # type: ignore
-    robot = win32com.client.Dispatch("Robot.Application")
+    try:   # bibliothèque de types : donne accès aux constantes RobotOM
+        robot = win32com.client.gencache.EnsureDispatch("Robot.Application")
+    except Exception:
+        robot = win32com.client.Dispatch("Robot.Application")
     projet = robot.GetCurrentProject()
     if projet is None:
         # tenter de prendre le projet actif
@@ -106,14 +112,22 @@ def extraire_com() -> dict:
             pass
     except Exception:
         periods = []
+    notes = ["Extraction COM réussie."]
+    try:
+        ossature = extraire_ossature_com(projet, cas_elu, cas_els)
+        notes += ossature.get("remarques", [])
+    except Exception as e:
+        ossature = None
+        notes.append(f"Ossature (poteaux, poutres, semelles, voiles) non lue : {e}")
     return {
         "nom": nom,
-        "nb_niveaux": None,
-        "elements": n_elements,
+        "nb_niveaux": len(ossature["niveaux"]) if ossature else None,
+        "elements": ossature["resume"] if ossature else n_elements,
         "cas_de_charge": cas,
         "combinaisons": combs,
         "modal": {"T1_s": periods[0] if periods else None},
-        "notes": ["Extraction COM réussie. Compléter géométrie/niveaux dans le module Synthèse (import manuel si besoin)."],
+        "ossature": ossature,
+        "notes": notes,
     }
 
 
@@ -127,6 +141,8 @@ def health():
 class ExtractInput(BaseModel):
     chemin_fichier: Optional[str] = None
     forcer_simulation: bool = False
+    cas_elu: Optional[int] = None    # numéro de la combinaison ELU dans Robot (sinon : nom contenant « ELU »)
+    cas_els: Optional[int] = None
 
 
 @app.get("/model")
@@ -158,7 +174,7 @@ def extract(inp: ExtractInput):
         m["robot_com"] = {"disponible": ok, "erreur": err}
         return m
     try:
-        m = extraire_com()
+        m = extraire_com(inp.cas_elu, inp.cas_els)
         m["mode"] = "robot"
         m["robot_com"] = {"disponible": True}
         return m

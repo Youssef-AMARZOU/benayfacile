@@ -179,7 +179,7 @@ révisant le décret 2-02-177 (décret 2-24-766 du 22/10/2024). Articles cités 
     parts.append("<h2>2 — Modèle de calcul (Robot Structural Analysis)</h2>")
     if inp.robot:
         r = inp.robot
-        parts.append(dict_table(r, skip=("niveaux", "combination_list", "combinaisons")))
+        parts.append(dict_table(r, skip=("niveaux", "combination_list", "combinaisons", "ossature")))
         if isinstance(r.get("niveaux"), list):
             parts.append("<h3>Masses par niveau</h3><table><tr><th>Niveau</th><th>Altitude (m)</th><th>Wi (kN)</th></tr>")
             for n in r["niveaux"]:

@@ -12,6 +12,7 @@ const state = {
 };
 
 const MODULES = [
+  { id: 'projet', label: 'Projet Robot', groupe: 'Projet', ref: 'Tout le modèle' },
   { id: 'poteau', label: 'Poteau', groupe: 'Éléments', ref: 'BAEL 91 · B.8.4' },
   { id: 'poutre', label: 'Poutre', groupe: 'Éléments', ref: 'BAEL 91 · flexion simple' },
   { id: 'semelle', label: 'Semelles isolées', groupe: 'Éléments', ref: 'Méthode des bielles' },
@@ -24,6 +25,7 @@ const MODULES = [
 
 /* Glyphes : la section de chaque élément, aciers en rouge (classe .acier / .acier-l). */
 const GLYPHES = {
+  projet: '<path d="M4 23V9l9-5 9 5v14"/><path d="M4 23h18 M4 16h18 M4 9.5h18 M13 4.5V23"/><circle class="acier" cx="4" cy="23" r="1.6"/><circle class="acier" cx="13" cy="23" r="1.6"/><circle class="acier" cx="22" cy="23" r="1.6"/>',
   poteau: '<rect x="5" y="5" width="16" height="16"/><rect x="8" y="8" width="10" height="10" stroke-width="1" stroke-dasharray="1.6 1.3"/><circle class="acier" cx="9" cy="9" r="1.7"/><circle class="acier" cx="17" cy="9" r="1.7"/><circle class="acier" cx="9" cy="17" r="1.7"/><circle class="acier" cx="17" cy="17" r="1.7"/>',
   poutre: '<rect x="2" y="8" width="22" height="8"/><path class="acier-l" d="M4 13.6h18"/><path d="M5 16l-2.2 4h4.4z M21 16l-2.2 4h4.4z"/>',
   semelle: '<path d="M10.5 2.5v9 M15.5 2.5v9"/><path d="M10.5 11.5 3 15v6h20v-6l-7.5-3.5"/><path class="acier-l" d="M5 19h16"/>',
@@ -130,10 +132,11 @@ function renderSynthesis() {
     state[key].forEach((item, i) => {
       let desc = '';
       if (key === 'poteaux') desc = `${item.a_cm}×${item.b_cm} cm — Nu ${item.nu_kn} kN — ${item.ferraillage?.choix || ''}`;
-      else if (key === 'poutres') desc = `b×h ${item.b_cm}×${item.h_cm} cm — Mu ${item.mu} — ${item.ferraillage?.choix || ''}`;
+      else if (key === 'poutres') desc = `b×h ${item.b_cm}×${item.h_cm} cm — ${item.mu_knm != null ? `Mu ${item.mu_knm} kN.m` : `μ ${item.mu}`} — ${item.ferraillage?.choix || ''}`;
       else if (key === 'voiles') desc = `L = ${item.longueur_m} m — σmax ${item.sigma_max_mpa} MPa`;
       else desc = `A ${item.A_m} × B ${item.B_m} — H ${item.H_m} m — ${item.acier_x} / ${item.acier_y}`;
-      html += `<li><span><b>${esc(label)} #${i + 1}</b> — ${esc(desc)}</span><button data-del="${key}" data-idx="${i}">✕</button></li>`;
+      const titre = item.nom ? `${item.nom}${item.niveau ? ' · ' + item.niveau : ''}` : `${label} #${i + 1}`;
+      html += `<li><span><b>${esc(titre)}</b> — ${esc(desc)}</span><button data-del="${key}" data-idx="${i}">✕</button></li>`;
     });
   }
   box.innerHTML = html || '<li><span class="small">Aucun élément pour l’instant. Calculez un élément, puis « Ajouter à la synthèse ». Ou chargez le scénario démo R+4.</span></li>';
@@ -144,6 +147,129 @@ function renderSynthesis() {
     else state[k].splice(+btn.dataset.idx, 1);
     renderSynthesis();
   }));
+}
+
+/* ============ MODULE: PROJET ROBOT (tout le modèle) ============ */
+const FAMILLES = [
+  { cle: 'poteaux', label: 'Poteaux', synthese: 'poteaux',
+    cols: [['Niveau', l => l.niveau], ['Section', l => dim(l.entree.a_cm, l.entree.b_cm)], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
+           ['Nu/Nu,lim', l => l.resultat?.nu_rapport, 'n'], ['As (cm²)', l => l.resultat?.as_calculee_cm2, 'n'], ['Ferraillage', l => l.resultat?.ferraillage?.choix]] },
+  { cle: 'poutres', label: 'Poutres', synthese: 'poutres',
+    cols: [['Niveau', l => l.niveau], ['Section', l => dim(l.entree.b_cm, l.entree.h_cm)], ['Portée (m)', l => l.entree.portee_m, 'n'],
+           ['Mu (kN.m)', l => l.entree.mu_knm, 'n'], ['As (cm²)', l => l.resultat?.as_retenue_cm2, 'n'], ['Ferraillage', l => l.resultat?.ferraillage?.choix]] },
+  { cle: 'semelles', label: 'Semelles', synthese: 'semelles_isolees',
+    cols: [['Poteau', l => dim(l.entree.a_poteau_cm, l.entree.b_poteau_cm)], ['Ns (kN)', l => l.entree.ns_kn, 'n'], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
+           ['A × B (m)', l => l.resultat ? `${l.resultat.A_m} × ${l.resultat.B_m}` : null, 'n'], ['H (m)', l => l.resultat?.H_m, 'n'],
+           ['Acier X / Y', l => l.resultat ? `${l.resultat.acier_x} / ${l.resultat.acier_y}` : null]] },
+  { cle: 'voiles', label: 'Voiles', synthese: 'voiles',
+    cols: [['Niveau', l => l.niveau], ['L × e', l => l.entree.longueur_m != null ? `${l.entree.longueur_m} m × ${l.entree.ep_cm ?? '?'} cm` : null],
+           ['N (kN)', l => l.entree.n_kn, 'n'], ['M (kN.m)', l => l.entree.m_knm, 'n'], ['σmax (MPa)', l => l.resultat?.sigma_max_mpa, 'n'],
+           ['As rive (cm²)', l => l.resultat?.as_rive_cm2, 'n']] },
+];
+const STATUTS = { verifie: 'Vérifié', a_revoir: 'À revoir', incomplet: 'Incomplet', erreur: 'Erreur' };
+function dim(a, b) { return a != null && b != null ? `${a} × ${b}` : null; }
+
+function tabProjet() {
+  const vue = { modele: null, lot: null, famille: 'poteaux', aRevoir: false };
+  const fissOpts = [['peu_prejudiciable', 'Peu préjudiciable'], ['prejudiciable', 'Préjudiciable'], ['tres_prejudiciable', 'Très préjudiciable']];
+  return {
+    html: `<h1 class="module-title">Projet Robot <small>Lecture du modèle Robot Structural Analysis et calcul de tous les éléments : poteaux, poutres, semelles, voiles (BAEL 91 rév. 99)</small></h1>
+<div class="grid pile"><div class="card projet-commandes">
+  <div class="etape">
+    <h2>Modèle</h2>
+    <div class="actions"><button class="btn" id="rb-lire">Lire le modèle Robot</button></div>
+    <div class="result" id="rb-modele"><p class="small">Ouvrez le projet dans Robot, puis lisez-le. Sans Robot, Bénayfacile charge le bâtiment R+4 de démonstration.</p></div>
+  </div>
+  <div class="etape">
+    <h2>Matériaux et sol</h2>
+    ${row2(field('rb-fc', "fc28 (MPa)", 25), field('rb-fe', "fe (MPa)", 500))}
+    ${row2(field('rb-sol', "σsol admissible (bar)", 2.0), select('rb-fis', "Fissuration", fissOpts, 'prejudiciable'))}
+    <div class="actions">
+      <button class="btn gold" id="rb-calc" disabled>Calculer tout le modèle</button>
+      <button class="btn ghost small" id="rb-add" disabled>Envoyer à la synthèse</button>
+    </div>
+  </div>
+</div>
+<div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
+    init() {
+      $('rb-lire').addEventListener('click', async () => {
+        const el = $('rb-modele'); el.innerHTML = '<p class="small"><span class="spinner"></span>Lecture du modèle…</p>';
+        try {
+          const r = await api('/api/robot/model');
+          vue.modele = r; vue.lot = null;
+          state.robot = r; renderSynthesis();
+          const o = r.ossature;
+          if (!o) { el.innerHTML = `<p class="warn">Le modèle ne contient pas d'ossature lisible.</p>` + notes(r.notes); return; }
+          const source = r.mode === 'robot' ? 'Robot (lecture COM)' : 'Démonstration R+4 (Robot non détecté)';
+          el.innerHTML = kv([
+            ['Source', source], ['Niveaux', o.niveaux.join(', ')],
+            ['Poteaux', o.resume.poteaux, true], ['Poutres', o.resume.poutres, true],
+            ['Semelles', o.resume.semelles, true], ['Voiles', o.resume.voiles, true],
+          ]) + notes(o.remarques) + `<details><summary>Hypothèses de la ${r.mode === 'robot' ? 'lecture' : 'simulation'}</summary>${notes(o.hypotheses)}</details>`;
+          $('rb-calc').disabled = false; $('rb-add').disabled = true;
+          const total = o.resume.poteaux + o.resume.poutres + o.resume.semelles + o.resume.voiles;
+          $('rb-res').innerHTML = vide('projet', `${total} éléments prêts. Lancez « Calculer tout le modèle ».`);
+        } catch (e) { el.innerHTML = `<p class="warn">Lecture impossible : ${esc(e.message)}</p>`; }
+      });
+
+      $('rb-calc').addEventListener('click', async () => {
+        const o = vue.modele?.ossature; if (!o) return;
+        const resEl = $('rb-res'); spinner(resEl);
+        try {
+          const payload = { poteaux: o.poteaux, poutres: o.poutres, semelles: o.semelles, voiles: o.voiles,
+            materiaux: { fc28_mpa: +$('rb-fc').value, fe_mpa: +$('rb-fe').value, sigma_sol_bar: +$('rb-sol').value, fissuration: $('rb-fis').value } };
+          vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
+          dessiner();
+          $('rb-add').disabled = false;
+        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+      });
+
+      $('rb-add').addEventListener('click', () => {
+        if (!vue.lot) return;
+        let n = 0;
+        for (const f of FAMILLES) {
+          state[f.synthese] = vue.lot[f.cle].filter(l => l.resultat).map(l => ({
+            ...l.resultat, nom: l.nom, niveau: l.niveau,
+            ...(f.cle === 'poteaux' ? { nu_kn: l.entree.nu_kn, mx_knm: l.entree.mx_knm, my_knm: l.entree.my_knm } : {}),
+            ...(f.cle === 'poutres' ? { mu_knm: l.entree.mu_knm } : {}),
+          }));
+          n += state[f.synthese].length;
+        }
+        renderSynthesis();
+        toast(`${n} éléments envoyés à la synthèse.`);
+      });
+
+      $('rb-res').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-famille]');
+        if (b) { vue.famille = b.dataset.famille; dessiner(); }
+      });
+      $('rb-res').addEventListener('change', (e) => {
+        if (e.target.id === 'rb-filtre') { vue.aRevoir = e.target.checked; dessiner(); }
+      });
+
+      function dessiner() {
+        const lot = vue.lot, s = lot.resume;
+        const fam = FAMILLES.find(f => f.cle === vue.famille);
+        const lignes = lot[fam.cle].filter(l => !vue.aRevoir || l.statut !== 'verifie');
+        const onglets = FAMILLES.map(f => {
+          const pb = lot[f.cle].filter(l => l.statut !== 'verifie').length;
+          return `<button class="onglet ${f.cle === vue.famille ? 'actif' : ''}" data-famille="${f.cle}">${f.label} <span class="compte">${lot[f.cle].length}</span>${pb ? `<span class="alerte" title="${pb} à revoir">${pb}</span>` : ''}</button>`;
+        }).join('');
+        const tete = `<tr><th>Élément</th>${fam.cols.map(([t, , n]) => `<th class="${n ? 'num' : ''}">${t}</th>`).join('')}<th>État</th></tr>`;
+        const corps = lignes.map(l => `<tr class="st-${l.statut}"><td><b>${esc(l.nom)}</b></td>${fam.cols.map(([, f, n]) => `<td class="${n ? 'num' : ''}">${esc(f(l) ?? '—')}</td>`).join('')}
+          <td><span class="etat ${l.statut}">${STATUTS[l.statut]}</span>${l.problemes?.length ? `<div class="probleme">${esc(l.problemes.join(' ; '))}</div>` : ''}</td></tr>`).join('');
+        $('rb-res').innerHTML = `<div class="bilan">
+            <div><span class="bilan-n">${s.total}</span> éléments</div>
+            <div class="ok"><span class="bilan-n">${s.verifie}</span> vérifiés</div>
+            <div class="${s.a_revoir ? 'ko' : ''}"><span class="bilan-n">${s.a_revoir}</span> à revoir</div>
+            <div class="${s.incomplet + s.erreur ? 'ko' : ''}"><span class="bilan-n">${s.incomplet + s.erreur}</span> incomplets</div>
+          </div>
+          <div class="onglets">${onglets}<label class="filtre"><input type="checkbox" id="rb-filtre" ${vue.aRevoir ? 'checked' : ''}> À revoir seulement</label></div>
+          ${lignes.length ? `<div class="table-defile"><table class="lot">${tete}${corps}</table></div>` : '<p class="small" style="padding:18px 0">Aucun élément à revoir dans cette famille.</p>'}`;
+      }
+    }
+  };
 }
 
 /* ============ MODULE: POTEAU ============ */
@@ -325,7 +451,7 @@ ${select('pt-fis', "Fissuration", [['peu_prejudiciable', 'Peu préjudiciable (σ
             ['σst OK ?', els.sigma_st_ok ? 'OUI' : 'NON'], ['τu (MPa)', `${tau.tau_u_mpa} / lim ${tau.tau_u_lim_mpa}`], ['At (cm²/m)', tau.at_cm2_par_m],
           ]) + renderRaw(r);
           $('pt-add').disabled = false;
-          $('pt-add').onclick = () => addToSynthesis('poutres', { ...r });
+          $('pt-add').onclick = () => addToSynthesis('poutres', { ...r, mu_knm: payload.mu_knm });
         } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
       });
     }
@@ -486,7 +612,7 @@ async function loadDemo() {
 }
 
 /* ---------- construction des onglets ---------- */
-const builders = { poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
+const builders = { projet: tabProjet, poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
   semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile,
   synthese: tabSynthese, bureau: tabBureau };
 
@@ -524,7 +650,7 @@ async function boot() {
     main.scrollTop = 0; window.scrollTo(0, 0);
     main.querySelectorAll('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + id));
   }
-  activate('poteau');
+  activate('projet');
   checkHealth();
 }
 boot();

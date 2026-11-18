@@ -289,11 +289,55 @@ pre.raw { background: var(--graphite); color: #d6dde3; padding: 12px 14px; borde
 #apercu-note .btn.ghost:hover { background: #ffffff1a; border-color: #fff; }
 #apercu-note iframe { flex: 1; border: 0; border-radius: 2px; background: #fff; box-shadow: 0 20px 60px -20px #000; }
 
+/* ───────── projet Robot : tout le modèle ───────── */
+.grid.pile { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.projet-commandes { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr); gap: 40px; }
+.projet-commandes .etape { min-width: 0; }
+.projet-commandes .result { margin-top: 14px; }
+.projet-commandes .kv { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); column-gap: 24px; }
+
+.bilan { display: flex; flex-wrap: wrap; gap: 8px 34px; padding: 4px 0 18px; color: var(--graphite-2); font-size: 13px; }
+.bilan-n { font-family: var(--police-titre); font-size: 28px; font-weight: 600; color: var(--graphite); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.bilan .ok .bilan-n { color: var(--verifie); }
+.bilan .ko .bilan-n { color: var(--non-verifie); }
+
+.onglets { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--graphite); }
+.onglet {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid transparent; border-bottom: 0; border-radius: var(--rayon) var(--rayon) 0 0;
+  background: transparent; padding: 8px 14px; margin-bottom: -1px; cursor: pointer;
+  color: var(--graphite-2); font-size: 13.5px;
+}
+.onglet:hover { color: var(--graphite); background: #00000008; }
+.onglet.actif { border-color: var(--graphite); background: var(--feuille); color: var(--graphite); font-weight: 600; }
+.onglet:focus-visible { outline: 2px solid var(--armature); outline-offset: -2px; }
+.onglet .compte { font-family: var(--police-titre); color: var(--graphite-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.onglet .alerte { background: var(--armature); color: #fff; border-radius: 9px; min-width: 18px; height: 18px; padding: 0 5px; font-size: 11px; display: inline-grid; place-items: center; font-weight: 600; }
+.filtre { margin-left: auto; padding: 0 2px 8px; font-size: 13px; color: var(--graphite-2); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.filtre input { accent-color: var(--armature); }
+
+.table-defile { max-height: 62vh; overflow: auto; }
+.result table.lot { margin: 0; }
+table.lot th { position: sticky; top: 0; background: var(--feuille); z-index: 1; text-align: left; }
+table.lot th.num, table.lot td.num { text-align: right; }
+table.lot td { text-align: left; font-family: var(--police-texte); vertical-align: top; }
+table.lot th, table.lot td { white-space: nowrap; }
+table.lot td:last-child { white-space: normal; min-width: 120px; }
+table.lot td.num { font-family: var(--police-titre); font-variant-numeric: tabular-nums; }
+table.lot tr:hover td { background: #00000005; }
+table.lot tr.st-a_revoir td, table.lot tr.st-erreur td, table.lot tr.st-incomplet td { background: var(--armature-voile); }
+.etat { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.etat.verifie { color: var(--verifie); }
+.etat.a_revoir, .etat.erreur { color: var(--non-verifie); }
+.etat.incomplet { color: var(--attention); }
+.probleme { font-size: 12px; color: var(--graphite-2); margin-top: 2px; max-width: 34ch; }
+
 /* ───────── adaptatif ───────── */
 @media (max-width: 1180px) {
   main { padding: 28px 28px 48px; }
   .grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  .grid > .card:first-child { max-width: 640px; }
+  .grid:not(.pile) > .card:first-child { max-width: 640px; }
+  .projet-commandes { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   h1.module-title { font-size: 30px; }
 }
 @media (max-width: 760px) {
