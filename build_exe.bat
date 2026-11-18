@@ -9,7 +9,7 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 echo [1/4] Dependances...
-python -m pip install -r requirements.txt pyinstaller pywin32 pytest httpx2 || goto :err
+python -m pip install -r requirements.txt pyinstaller pywin32 pytest httpx || goto :err
 
 echo [2/4] Tests du moteur (le build s'arrete si un test echoue)...
 python -m pytest tests -q || goto :err
