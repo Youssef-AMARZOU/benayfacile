@@ -7,14 +7,26 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="logo">BÉNAY<b>FACILE</b></div>
-  <div class="tagline">Bureau d'études structure — BAEL 91 rév. 99 · RPS 2000 v2011</div>
-  <div class="health" id="health">vérification des services…</div>
-</header>
-<nav class="tabs" id="tabs"></nav>
-<main id="main"></main>
-<footer>Bénayfacile · Note de calcul automatique · Robot Structural Analysis → DXF · Les textes officiels BAEL/RPS font foi</footer>
+<div class="shell">
+  <aside class="rail">
+    <div class="marque">
+      <svg class="marque-signe" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="3" width="26" height="26" rx="1.5" />
+        <rect x="7.5" y="7.5" width="17" height="17" class="cadre" />
+        <circle cx="9.5" cy="9.5" r="2.2" class="acier" /><circle cx="22.5" cy="9.5" r="2.2" class="acier" />
+        <circle cx="9.5" cy="22.5" r="2.2" class="acier" /><circle cx="22.5" cy="22.5" r="2.2" class="acier" />
+      </svg>
+      <div>
+        <div class="marque-nom">Bénayfacile</div>
+        <div class="marque-normes">BAEL 91 &nbsp;/&nbsp; RPS 2011</div>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Modules de calcul"></nav>
+    <div class="cartouche" id="cartouche"></div>
+    <div class="health" id="health" aria-live="polite">vérification des services…</div>
+  </aside>
+  <main id="main"></main>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

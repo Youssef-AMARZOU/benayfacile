@@ -26,12 +26,20 @@ ROOT = HERE.parent
 REFS = pathlib.Path(os.environ.get("BNAY_DATA", str(ROOT))) / "referentiels"
 STATIC = HERE / "static"
 
+# Adresses des microservices. Le lanceur de l'application de bureau choisit des
+# ports libres au démarrage et les transmet par BNAY_URL_<SERVICE> ; les valeurs
+# par défaut correspondent à run_services.bat.
 SERVICES = {
-    "robot": "http://127.0.0.1:8001",
-    "engine": "http://127.0.0.1:8002",
-    "dxf": "http://127.0.0.1:8003",
-    "report": "http://127.0.0.1:8004",
+    "robot": os.environ.get("BNAY_URL_ROBOT", "http://127.0.0.1:8001"),
+    "engine": os.environ.get("BNAY_URL_ENGINE", "http://127.0.0.1:8002"),
+    "dxf": os.environ.get("BNAY_URL_DXF", "http://127.0.0.1:8003"),
+    "report": os.environ.get("BNAY_URL_REPORT", "http://127.0.0.1:8004"),
 }
+
+# Appels internes en boucle locale : ignorer les proxys système (HTTP_PROXY,
+# proxy Windows), qui casseraient les appels vers 127.0.0.1 sur certains postes.
+_HTTP = requests.Session()
+_HTTP.trust_env = False
 
 app = FastAPI(title="Bénayfacile — Gateway", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -42,7 +50,7 @@ def health():
     status = {}
     for name, base in SERVICES.items():
         try:
-            r = requests.get(base + "/health", timeout=2.5)
+            r = _HTTP.get(base + "/health", timeout=2.5)
             status[name] = "ok" if r.ok else f"erreur {r.status_code}"
         except Exception as e:
             status[name] = f"injoignable ({e})"
@@ -58,11 +66,11 @@ async def proxy(service: str, path: str, request: Request):
     params = dict(request.query_params)
     try:
         if request.method == "GET":
-            r = requests.get(url, params=params, timeout=60)
+            r = _HTTP.get(url, params=params, timeout=60)
         else:
             body = await request.body()
             headers = {"Content-Type": request.headers.get("content-type", "application/json")}
-            r = requests.request(request.method, url, data=body, params=params, headers=headers, timeout=120)
+            r = _HTTP.request(request.method, url, data=body, params=params, headers=headers, timeout=120)
     except requests.RequestException as e:
         raise HTTPException(502, f"service {service} injoignable : {e}")
     content_type = r.headers.get("content-type", "application/octet-stream")
@@ -74,7 +82,7 @@ async def proxy(service: str, path: str, request: Request):
 @app.get("/api/dxf/download/{nom}")
 def dxf_download(nom: str):
     url = SERVICES["dxf"] + f"/download/{nom}"
-    r = requests.get(url, timeout=60)
+    r = _HTTP.get(url, timeout=60)
     if r.status_code != 200:
         raise HTTPException(r.status_code, "fichier introuvable")
     return Response(content=r.content, media_type="application/dxf",
