@@ -57,28 +57,6 @@ def health():
     return {"service": "gateway", "status": "ok", "services": status}
 
 
-@app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy(service: str, path: str, request: Request):
-    base = SERVICES.get(service)
-    if not base:
-        raise HTTPException(404, f"service inconnu : {service}")
-    url = f"{base}/{path}"
-    params = dict(request.query_params)
-    try:
-        if request.method == "GET":
-            r = _HTTP.get(url, params=params, timeout=60)
-        else:
-            body = await request.body()
-            headers = {"Content-Type": request.headers.get("content-type", "application/json")}
-            r = _HTTP.request(request.method, url, data=body, params=params, headers=headers, timeout=120)
-    except requests.RequestException as e:
-        raise HTTPException(502, f"service {service} injoignable : {e}")
-    content_type = r.headers.get("content-type", "application/octet-stream")
-    return Response(content=r.content, status_code=r.status_code,
-                    media_type=content_type.split(";")[0],
-                    headers={"x-upstream-status": str(r.status_code)})
-
-
 @app.get("/api/dxf/download/{nom}")
 def dxf_download(nom: str):
     url = SERVICES["dxf"] + f"/download/{nom}"
@@ -86,6 +64,17 @@ def dxf_download(nom: str):
     if r.status_code != 200:
         raise HTTPException(r.status_code, "fichier introuvable")
     return Response(content=r.content, media_type="application/dxf",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+
+@app.get("/api/report/excel/{nom}")
+def excel_download(nom: str):
+    # route dédiée (le proxy générique ne transmet pas Content-Disposition)
+    r = _HTTP.get(SERVICES["report"] + f"/excel/{nom}", timeout=60)
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "fichier introuvable")
+    return Response(content=r.content,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{nom}"'})
 
 
@@ -136,6 +125,29 @@ def demo():
         "voiles": [{"longueur_m": 4.0, "ep_cm": 18, "fc28_mpa": 25, "fe_mpa": 500,
                     "n_kn": 1200, "m_knm": 260, "v_kn": 180}],
     }
+
+
+# Proxy générique : déclaré APRÈS les routes /api/... dédiées, que FastAPI doit trouver d'abord.
+@app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy(service: str, path: str, request: Request):
+    base = SERVICES.get(service)
+    if not base:
+        raise HTTPException(404, f"service inconnu : {service}")
+    url = f"{base}/{path}"
+    params = dict(request.query_params)
+    try:
+        if request.method == "GET":
+            r = _HTTP.get(url, params=params, timeout=60)
+        else:
+            body = await request.body()
+            headers = {"Content-Type": request.headers.get("content-type", "application/json")}
+            r = _HTTP.request(request.method, url, data=body, params=params, headers=headers, timeout=120)
+    except requests.RequestException as e:
+        raise HTTPException(502, f"service {service} injoignable : {e}")
+    content_type = r.headers.get("content-type", "application/octet-stream")
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=content_type.split(";")[0],
+                    headers={"x-upstream-status": str(r.status_code)})
 
 
 app.mount("/", StaticFiles(directory=str(STATIC), html=True), name="static")

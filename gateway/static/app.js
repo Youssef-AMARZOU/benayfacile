@@ -187,7 +187,9 @@ function tabProjet() {
     <div class="actions">
       <button class="btn gold" id="rb-calc" disabled>Calculer tout le modèle</button>
       <button class="btn ghost small" id="rb-add" disabled>Envoyer à la synthèse</button>
+      <button class="btn ghost small" id="rb-xlsx" disabled>Exporter en Excel</button>
     </div>
+    <p class="export" id="rb-xlsx-res"></p>
   </div>
 </div>
 <div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
@@ -221,7 +223,8 @@ function tabProjet() {
           vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
           dessiner();
-          $('rb-add').disabled = false;
+          $('rb-add').disabled = false; $('rb-xlsx').disabled = false;
+          $('rb-xlsx-res').innerHTML = '';
         } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
       });
 
@@ -238,6 +241,18 @@ function tabProjet() {
         }
         renderSynthesis();
         toast(`${n} éléments envoyés à la synthèse.`);
+      });
+
+      $('rb-xlsx').addEventListener('click', async () => {
+        if (!vue.lot) return;
+        const el = $('rb-xlsx-res'); el.innerHTML = '<span class="spinner"></span>Création du classeur…';
+        try {
+          const p = state.project;
+          const r = await api('/api/report/excel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot, bureau: state.bureau }) });
+          const url = '/api/report/excel/' + encodeURIComponent(r.fichier);
+          el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code>.<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+        } catch (e) { el.innerHTML = `<span class="warn">Export impossible : ${esc(e.message)}</span>`; }
       });
 
       $('rb-res').addEventListener('click', (e) => {

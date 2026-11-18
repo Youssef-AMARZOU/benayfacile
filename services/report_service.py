@@ -10,10 +10,14 @@ import json
 import pathlib
 from typing import Any, Optional
 
-from fastapi import FastAPI
+import re
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
+
+from excel_report import classeur_octets
 
 HERE = pathlib.Path(__file__).resolve().parent
 # BNAY_DATA : dossier de données inscriptible (fixé par le lanceur .exe)
@@ -349,6 +353,50 @@ def note_save(inp: NoteInput):
     chemin = OUT / f"note_de_calcul_{now}.html"
     chemin.write_text(h, encoding="utf-8")
     return {"fichier": chemin.name, "octets": chemin.stat().st_size}
+
+# ───────────── classeur Excel des résultats du calcul en lot ─────────────
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+class ExcelInput(BaseModel):
+    projet: str = "Projet"
+    client: str = ""
+    site: str = ""
+    indice: str = "A"
+    lot: dict                      # réponse de POST /lot (moteur)
+    bureau: Optional[dict] = None
+
+
+def _slug(texte: str) -> str:
+    t = re.sub(r"[^A-Za-z0-9]+", "_", texte.encode("ascii", "ignore").decode()).strip("_")
+    return (t or "Projet")[:40]
+
+
+@app.post("/excel")
+def excel(inp: ExcelInput):
+    """Écrit le classeur dans output/ et renvoie son nom (téléchargement : GET /excel/{nom})."""
+    try:
+        bur = inp.bureau or json.loads((REFS / "bureau.json").read_text(encoding="utf-8"))
+    except Exception:
+        bur = {}
+    projet = {"projet": inp.projet, "client": inp.client, "site": inp.site, "indice": inp.indice}
+    octets = classeur_octets(inp.lot, projet, bur)
+    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    chemin = OUT / f"Note_de_Calcul_{_slug(inp.projet)}_{now}.xlsx"
+    chemin.write_bytes(octets)
+    return {"fichier": chemin.name, "octets": len(octets), "dossier": str(OUT)}
+
+
+@app.get("/excel/{nom}")
+def excel_telecharger(nom: str):
+    # un simple nom de fichier .xlsx du dossier output : pas de chemin
+    if nom != pathlib.Path(nom).name or not nom.endswith(".xlsx"):
+        raise HTTPException(400, "nom de fichier invalide")
+    chemin = OUT / nom
+    if not chemin.is_file():
+        raise HTTPException(404, "fichier introuvable")
+    return FileResponse(chemin, media_type=XLSX, filename=nom)
+
 
 if __name__ == '__main__':
     import uvicorn

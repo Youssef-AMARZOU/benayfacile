@@ -296,6 +296,9 @@ pre.raw { background: var(--graphite); color: #d6dde3; padding: 12px 14px; borde
 .projet-commandes .result { margin-top: 14px; }
 .projet-commandes .kv { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); column-gap: 24px; }
 
+.export { font-size: 13px; color: var(--graphite-2); margin: 12px 0 0; line-height: 1.7; overflow-wrap: anywhere; }
+.export:empty { display: none; }
+.export .btn { margin-top: 6px; }
 .bilan { display: flex; flex-wrap: wrap; gap: 8px 34px; padding: 4px 0 18px; color: var(--graphite-2); font-size: 13px; }
 .bilan-n { font-family: var(--police-titre); font-size: 28px; font-weight: 600; color: var(--graphite); margin-right: 6px; font-variant-numeric: tabular-nums; }
 .bilan .ok .bilan-n { color: var(--verifie); }
