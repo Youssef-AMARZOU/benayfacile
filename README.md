@@ -74,8 +74,9 @@ droit administrateur, aucune configuration :
 ### Sous Windows (poste BET, sans Python)
 
 Lancer `Benayfacile.exe` (voir `build_exe.bat` pour la construction) :
-les 5 services démarrent dans un seul processus, le navigateur s'ouvre sur
-`http://127.0.0.1:8090`.
+les 5 services démarrent dans un seul processus sur des ports libres
+attribués automatiquement (zéro conflit possible), et le tableau de bord
+s'ouvre tout seul — aucune URL à saisir.
 
 ### Depuis les sources (développeur)
 
