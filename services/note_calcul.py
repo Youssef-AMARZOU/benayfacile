@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import html
 import math
+import re
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -194,22 +195,95 @@ def etat(ok: bool) -> str:
 
 # ───────────────────────── fragments HTML ─────────────────────────
 
+class Tableaux:
+    r"""Légendes numérotées « Tableau 1 — … », comme \caption dans LaTeX."""
+
+    def __init__(self):
+        self.n = 0
+
+    def legende(self, titre: Optional[str]) -> str:
+        if not titre:
+            return ""
+        self.n += 1
+        return f"<caption>Tableau {self.n} — {titre}</caption>"
+
+
+TAB = Tableaux()
+LIGNES_INSECABLES = 8      # en dessous, le tableau n'est jamais coupé entre deux pages
+
+
+def ent(libelle: str, unite: str = "") -> str:
+    """En-tête de colonne : libellé, puis l'unité sur une seconde ligne."""
+    return f'{libelle}<br><span class="u">({unite})</span>' if unite else libelle
+
+
+def _insecable(html_tableau: str, nb_lignes: int) -> str:
+    return f'<div class="bloc">{html_tableau}</div>' if nb_lignes <= LIGNES_INSECABLES else html_tableau
+
+
+_INSECABLE = re.compile(r"\d+ HA\d+|\d+(?:,\d+)? × \d+(?:,\d+)?|\S+ à \S+")
+
+
+def _cellule(v) -> str:
+    """« 7 HA10 », « 25 × 50 », « R+2 à R+4 » ne se coupent jamais. Pas d'espace insécable :
+    dans Latin Modern il est plus large qu'une espace ordinaire."""
+    return _INSECABLE.sub(lambda m: f'<span class="nw">{m.group(0)}</span>', str(v))
+
+
 def tableau(entetes: List[str], lignes: List[List[str]], classes: Optional[List[str]] = None, cls: str = "",
-            largeurs: Optional[List[int]] = None) -> str:
-    """largeurs : colonnes en % (mise en page fixe, comme tabularx) ; sinon largeur automatique."""
+            largeurs: Optional[List[int]] = None, titre: Optional[str] = None) -> str:
+    """largeurs : colonnes en % (mise en page fixe, comme tabularx) ; sinon largeur automatique.
+    titre : légende numérotée au-dessus du tableau."""
     classes = classes or [""] * len(entetes)
     cols = ("<colgroup>" + "".join(f'<col style="width:{w}%">' for w in largeurs) + "</colgroup>") if largeurs else ""
     if largeurs:
         cls = (cls + " fixe").strip()
     th = "".join(f'<th class="{c}">{e}</th>' for e, c in zip(entetes, classes))
     # « 7 HA10 » ne se coupe jamais entre le nombre et le diamètre
-    corps = "".join("<tr>" + "".join(f'<td class="{c}">{str(v).replace(" HA", chr(160) + "HA")}</td>' for v, c in zip(l, classes))
+    corps = "".join("<tr>" + "".join(f'<td class="{c}">{_cellule(v)}</td>' for v, c in zip(l, classes))
                     + "</tr>" for l in lignes)
-    return f'<table class="{cls}">{cols}<thead><tr>{th}</tr></thead><tbody>{corps}</tbody></table>'
+    t = f'<table class="{cls}">{TAB.legende(titre)}{cols}<thead><tr>{th}</tr></thead><tbody>{corps}</tbody></table>'
+    return _insecable(t, len(lignes))
 
 
-def kv(lignes: List[Tuple[str, str]], cls: str = "kv") -> str:
-    return f'<table class="{cls}">' + "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in lignes) + "</table>"
+def kv(lignes: List[Tuple[str, str]], cls: str = "kv", titre: Optional[str] = None,
+       entetes: Tuple[str, str] = ("Désignation", "Valeur")) -> str:
+    """Tableau à deux colonnes (désignation, valeur)."""
+    tete = f"<thead><tr><th>{entetes[0]}</th><th>{entetes[1]}</th></tr></thead>" if titre else ""
+    t = (f'<table class="{cls}">{TAB.legende(titre)}{tete}<tbody>'
+         + "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in lignes) + "</tbody></table>")
+    return _insecable(t, len(lignes))
+
+
+def kv4(lignes: List[Tuple[str, str, str, str]], titre: str) -> str:
+    """Hypothèses : désignation, symbole (LaTeX), valeur, unité — la présentation usuelle d'un BET."""
+    rangs = [[d, im(sym) if sym else "—", v, u or "—"] for d, sym, v, u in lignes]
+    return tableau(["Désignation", "Symbole", "Valeur", "Unité"], rangs, ["", "c", "n", ""], "hyp",
+                   largeurs=[44, 30, 14, 12], titre=titre)
+
+
+def reperes(groupe: dict, prefixe: str) -> str:
+    """Repères distincts du type (« A1, C1, A3 »), sans le préfixe ni le niveau."""
+    vus: List[str] = []
+    for e in groupe["elements"]:
+        r = str(e.get("nom") or "").strip()
+        if r.startswith(prefixe + " "):
+            r = r[len(prefixe) + 1:]
+        if r and r not in vus:
+            vus.append(r)
+    return ", ".join(vus) or "—"
+
+
+def niveaux(groupe: dict) -> str:
+    """Niveaux concernés : « RDC », « RDC, R+1 » ou « R+2 à R+4 »."""
+    vus: List[str] = []
+    for e in groupe["elements"]:
+        n = e.get("niveau")
+        if n and n not in vus:
+            vus.append(n)
+    if not vus:
+        return "—"
+    return ", ".join(vus) if len(vus) <= 2 else f"{vus[0]} à {vus[-1]}"
 
 
 def calcul(lignes: List[Tuple[str, str, str]]) -> str:
@@ -251,7 +325,15 @@ th, td { padding: 2.5pt 6pt; vertical-align: top; text-align: left; border: none
 thead th { font-weight: bold; border-bottom: .5pt solid #000; }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
 thead th, thead th.n { white-space: normal; vertical-align: bottom; }
+th .u { font-weight: normal; font-size: 8.5pt; }
+caption { caption-side: top; text-align: center; font-size: 9.5pt; padding: 0 0 5pt; }
+.bloc { break-inside: avoid; }   /* tableau court : jamais coupé entre deux pages */
+p:has(+ .bloc), p:has(+ .equation), .equation:has(+ .bloc), h3:has(+ .bloc), h3:has(+ p + .bloc),
+h2 + p { break-after: avoid; }   /* le texte qui l'annonce reste avec lui */
+thead { display: table-header-group; }   /* en-tête répété si le tableau continue page suivante */
+table.hyp td:nth-child(2) { text-align: center; }
 td.c, th.c { text-align: center; }
+.nw { white-space: nowrap; }
 table.kv th { width: 52%; font-weight: normal; }
 table.kv tr + tr th, table.kv tr + tr td { border-top: .25pt solid #c8c8c8; }
 table.calcul td { padding: 3pt 6pt; }
@@ -381,7 +463,7 @@ def presentation(inp: dict) -> str:
             + f"<p>La présente note a pour objet la justification de la structure en béton armé de l'ouvrage décrit ci-dessous. "
               f"Les efforts proviennent du modèle de calcul ; les hypothèses que nous avons retenues sont exposées au chapitre 3. "
               f"L'étude porte sur {esc(compte) or 'les éléments calculés'}.</p>"
-            + kv(lignes))
+            + kv(lignes, titre="Caractéristiques générales de l'ouvrage"))
 
 
 def reglements(inp: dict) -> str:
@@ -403,42 +485,52 @@ def hypotheses(inp: dict, m: dict) -> str:
     charges_modele = [h for h in (oss.get("hypotheses") or []) if "G =" in h or "kN/m²" in h]
     q = [["Habitation, logements", "1,50"], ["Bureaux", "2,50"], ["Escaliers, circulations", "2,50"],
          ["Balcons", "3,50"], ["Terrasse non accessible", "1,00"], ["Terrasse accessible", "1,50"]]
-    sol = (f"{fr(m['sigma_sol'])} bar" if m["sigma_sol"] else "à préciser par l'étude géotechnique")
+    sol = fr(m["sigma_sol"]) if m["sigma_sol"] else "à préciser"
     return "".join([
         h2(3, "s3", "Hypothèses de calcul"),
         "<p>Nous avons retenu les caractéristiques suivantes pour les matériaux, le sol de fondation et les charges.</p>",
         "<h3>3.1 Béton</h3>",
-        kv([("Résistance caractéristique à 28 jours fc28", f"{fr(m['fc28'], 0)} MPa"),
-            ("Résistance à la traction ft28 = 0,6 + 0,06·fc28", f"{fr(m['ft28'])} MPa"),
-            ("Résistance de calcul fbu = 0,85·fc28 / (θ·γb), γb = 1,5", f"{fr(m['fbu'])} MPa"),
-            ("Contrainte limite de service σbc = 0,6·fc28", f"{fr(m['sigma_bc'], 1)} MPa"),
-            ("Module instantané Eij = 11 000·fc28^(1/3)", f"{fr(m['Eij'], 0)} MPa"),
-            ("Module différé Evj = 3 700·fc28^(1/3)", f"{fr(m['Evj'], 0)} MPa")]),
+        kv4([("Résistance caractéristique à 28 jours", r"f_{c28}", fr(m["fc28"], 0), "MPa"),
+             ("Résistance à la traction", r"f_{t28} = 0{,}6 + 0{,}06 \, f_{c28}", fr(m["ft28"]), "MPa"),
+             ("Coefficient de sécurité", r"\gamma_b", "1,50", ""),
+             ("Résistance de calcul en compression", r"f_{bu} = \frac{0{,}85 \, f_{c28}}{\theta \, \gamma_b}", fr(m["fbu"]), "MPa"),
+             ("Contrainte limite de service", r"\overline{\sigma}_{bc} = 0{,}6 \, f_{c28}", fr(m["sigma_bc"], 1), "MPa"),
+             ("Module de déformation instantanée", r"E_{ij} = 11\,000 \, f_{c28}^{1/3}", fr(m["Eij"], 0), "MPa"),
+             ("Module de déformation différée", r"E_{vj} = 3\,700 \, f_{c28}^{1/3}", fr(m["Evj"], 0), "MPa")],
+            "Caractéristiques du béton"),
         "<h3>3.2 Acier</h3>",
-        kv([("Nuance", f"Haute adhérence FeE{fr(m['fe'], 0)}"),
-            ("Limite d'élasticité fe", f"{fr(m['fe'], 0)} MPa"),
-            ("Résistance de calcul fsu = fe / γs, γs = 1,15", f"{fr(m['fsu'], 1)} MPa"),
-            ("Module d'élasticité Es", "200 000 MPa"),
-            ("Coefficient de fissuration η", "1,6")]),
+        kv4([("Nuance (haute adhérence)", "", f"FeE{fr(m['fe'], 0)}", ""),
+             ("Limite d'élasticité", r"f_e", fr(m["fe"], 0), "MPa"),
+             ("Coefficient de sécurité", r"\gamma_s", "1,15", ""),
+             ("Résistance de calcul", r"f_{su} = f_e / \gamma_s", fr(m["fsu"], 1), "MPa"),
+             ("Module d'élasticité", r"E_s", "200 000", "MPa"),
+             ("Coefficient de fissuration", r"\eta", "1,6", "")],
+            "Caractéristiques de l'acier"),
         "<h3>3.3 Enrobages et fissuration</h3>",
-        kv([("Enrobage des poteaux", f"{fr(m['enrobage_poteau'], 0)} mm"), ("Enrobage des poutres", f"{fr(m['enrobage_poutre'], 0)} mm"),
-            ("Enrobage des fondations", f"{fr(m['enrobage_semelle'], 0)} mm"),
-            ("Fissuration", FISSURATION.get(m["fissuration"], m["fissuration"])),
-            ("Contrainte limite de l'acier en service σst", f"{fr(m['sigma_st'], 1)} MPa")]),
+        kv4([("Enrobage des poteaux", "c", fr(m["enrobage_poteau"], 0), "mm"),
+             ("Enrobage des poutres", "c", fr(m["enrobage_poutre"], 0), "mm"),
+             ("Enrobage des fondations", "c", fr(m["enrobage_semelle"], 0), "mm"),
+             ("Fissuration", "", esc(FISSURATION.get(m["fissuration"], m["fissuration"])), ""),
+             ("Contrainte limite de l'acier en service", r"\overline{\sigma}_{st}", fr(m["sigma_st"], 1), "MPa")],
+            "Enrobages et fissuration"),
         "<h3>3.4 Sol de fondation</h3>",
-        kv([("Contrainte admissible du sol σsol", sol),
-            ("Source", esc(f"rapport géotechnique — {inp['laboratoire']}") if inp.get("laboratoire") else "rapport géotechnique")]),
+        kv4([("Contrainte admissible du sol", r"\overline{\sigma}_{sol}", sol, "bar" if m["sigma_sol"] else "")],
+            "Sol de fondation"),
+        "<p>Cette valeur est celle du rapport géotechnique"
+        + (f" établi par {esc(inp['laboratoire'])}" if inp.get("laboratoire") else "") + ".</p>",
         "<h3>3.5 Charges</h3>",
         ("<p>Les charges permanentes G et d'exploitation Q appliquées dans le modèle sont les suivantes :</p><ul>"
          + "".join(f"<li>{esc(h)}</li>" for h in charges_modele) + "</ul>"
          if charges_modele else "<p>Les charges permanentes G et d'exploitation Q sont celles appliquées dans le modèle de calcul.</p>"),
-        "<p>Pour mémoire, nous rappelons les charges d'exploitation réglementaires (NF P 06-001) :</p>",
-        tableau(["Usage", "Q (kN/m²)"], q, ["", "n"]),
+        "<p>Pour mémoire, nous rappelons au tableau ci-dessous les charges d'exploitation réglementaires.</p>",
+        tableau(["Usage", ent(im("Q"), "kN/m²")], q, ["", "n"], largeurs=[70, 30],
+                titre="Charges d'exploitation de référence (NF P 06-001)"),
         "<h3>3.6 Combinaisons d'actions</h3>",
         "<p>Les sollicitations de calcul résultent des combinaisons suivantes :</p>",
         tableau(["État limite", "Combinaison"],
-                [["ELU fondamental", "1,35 G + 1,5 Q"], ["ELS", "G + Q"],
-                 ["Accidentelle sismique (RPS 2011)", "G + ψ·Q ± E, avec ψ fonction de l'usage"]]),
+                [["ELU fondamental", im(r"1{,}35 \, G + 1{,}5 \, Q")], ["ELS", im("G + Q")],
+                 ["Accidentelle sismique (RPS 2011)", im(r"G + \psi \, Q \pm E") + ", avec " + im(r"\psi") + " fonction de l'usage"]],
+                largeurs=[40, 60], titre="Combinaisons d'actions"),
     ])
 
 
@@ -460,7 +552,7 @@ def modelisation(inp: dict) -> str:
     hyp = [h for h in (oss.get("hypotheses") or []) if "G =" not in h]
     return (h2(4, "s4", "Modélisation")
             + "<p>La structure a été modélisée en trois dimensions ; les efforts utilisés dans cette note proviennent de ce modèle, "
-              "pour les combinaisons définies au paragraphe 3.6.</p>" + kv(lignes)
+              "pour les combinaisons définies au paragraphe 3.6.</p>" + kv(lignes, titre="Données du modèle de calcul")
             + ("<ul>" + "".join(f"<li>{esc(h)}</li>" for h in hyp) + "</ul>" if hyp else ""))
 
 
@@ -480,13 +572,18 @@ def sismique(inp: dict) -> str:
         ("Site", d.get("site")), ("Classe de l'ouvrage", CLASSES.get(d.get("classe"), d.get("classe"))),
         ("Système de contreventement", SYSTEMES.get(d.get("systeme"), d.get("systeme"))),
         ("Niveau de ductilité", DUCTILITE.get(d.get("ductilite"), d.get("ductilite")))) if v]
-    out.append(kv([(k, esc(v)) for k, v in donnees] + [
-        ("Coefficient de vitesse " + im(r"\upsilon"), fr(s.get("nu_m_s"))), ("Coefficient de site " + im("S"), fr(s.get("S"))),
-        ("Coefficient d'importance " + im("I"), fr(s.get("I"))), ("Coefficient de comportement " + im("K"), fr(s.get("K"))),
-        ("Coefficient d'usage " + im(r"\psi"), fr(s.get("psi"))), ("Période fondamentale " + im("T"), f"{fr(s.get('T_s'), 3)} s"),
-        ("Facteur d'amplification dynamique " + im("D"), fr(s.get("D"), 3)), ("Poids sismique " + im("W"), f"{fr(s.get('W_kn'), 0)} kN"),
-        ("Effort sismique à la base " + im("F"), f"<b>{fr(s.get('F_base_kn'), 1)} kN</b>"),
-        ("Force au sommet " + im("F_t"), f"{fr(s.get('Ft_kn'), 1)} kN")]))
+    if donnees:
+        out.append(kv([(k, esc(v)) for k, v in donnees], titre="Données sismiques du site et de l'ouvrage"))
+    out.append(kv4([("Coefficient de vitesse", r"\upsilon", fr(s.get("nu_m_s")), ""),
+                    ("Coefficient de site", "S", fr(s.get("S")), ""),
+                    ("Coefficient d'importance", "I", fr(s.get("I")), ""),
+                    ("Coefficient de comportement", "K", fr(s.get("K")), ""),
+                    ("Coefficient d'usage", r"\psi", fr(s.get("psi")), ""),
+                    ("Période fondamentale", "T", fr(s.get("T_s"), 3), "s"),
+                    ("Facteur d'amplification dynamique", "D", fr(s.get("D"), 3), ""),
+                    ("Poids sismique", "W", fr(s.get("W_kn"), 0), "kN"),
+                    ("Effort sismique à la base", "F", f"<b>{fr(s.get('F_base_kn'), 1)}</b>", "kN"),
+                    ("Force au sommet", "F_t", fr(s.get("Ft_kn"), 1), "kN")], "Paramètres du calcul sismique"))
     if s.get("W_kn") and s.get("F_base_kn"):
         out.append("<p>Numériquement, " + im(rf"F = \frac{{{tx(s.get('nu_m_s'))} \times {tx(s.get('S'))} \times {tx(s.get('D'), 3)} "
                                              rf"\times {tx(s.get('I'))} \times {tx(s.get('W_kn'), 0)}}}{{{tx(s.get('K'))}}} = {tx(s.get('F_base_kn'), 1)}\ \text{{kN}}")
@@ -495,9 +592,9 @@ def sismique(inp: dict) -> str:
         out.append("<h3>Répartition verticale</h3>")
         out.append("<p>Cet effort est réparti sur la hauteur du bâtiment, proportionnellement aux masses et aux hauteurs des niveaux :</p>")
         out.append(EQ(r"F_n = \frac{(F - F_t) \, W_n \, h_n}{\sum W_i \, h_i}"))
-        out.append(tableau(["Niveau", im("W_n") + " (kN)", im("h_n") + " (m)", im("F_n") + " (kN)"],
+        out.append(tableau(["Niveau", ent(im("W_n"), "kN"), ent(im("h_n"), "m"), ent(im("F_n"), "kN")],
                            [[esc(n.get("niveau")), fr(n.get("Wn_kn"), 0), fr(n.get("hn_m")), fr(n.get("Fn_kn"), 1)] for n in s["Fn"]],
-                           ["", "n", "n", "n"]))
+                           ["", "n", "n", "n"], largeurs=[34, 22, 22, 22], titre="Répartition verticale de l'effort sismique"))
     for h in s.get("hypotheses") or []:
         out.append(f'<p class="note">{esc(h)}</p>')
     return "".join(out)
@@ -520,12 +617,13 @@ def section_poteaux(liste: List[dict], m: dict) -> str:
     for t in types:
         e = max(t["elements"], key=lambda p: p.get("nu_rapport") or 0)
         lignes.append([t["code"], f"{fr(e.get('a_cm'), 0)} × {fr(e.get('b_cm'), 0)}", str(len(t["elements"])),
-                       esc(liste_noms(t["noms"])), fr(e.get("nu_kn"), 0), fr(e.get("nu_lim_kn_avec_as_fournie"), 0),
+                       esc(reperes(t, "P")), esc(niveaux(t)), fr(e.get("nu_kn"), 0), fr(e.get("nu_lim_kn_avec_as_fournie"), 0),
                        fr(e.get("nu_rapport"), 2), esc((e.get("ferraillage") or {}).get("choix")), etat(t["ok"])])
     out.append("<p>Les poteaux de même section et de même ferraillage sont regroupés en types :</p>")
-    out.append(tableau(["Type", "a × b (cm)", "Nb", "Éléments", im("N_u") + " max (kN)", im(r"N_{u,\lim}") + " (kN)",
-                        im(r"N_u / N_{u,\lim}"), "Ferraillage", "État"],
-                       lignes, ["", "c", "c", "el", "n", "n", "n", "", "c"], largeurs=[5, 9, 5, 29, 9, 9, 9, 14, 11]))
+    out.append(tableau(["Type", ent("a × b", "cm"), "Nb", "Repères", "Niveaux", ent(im("N_u") + " max", "kN"),
+                        ent(im(r"N_{u,\lim}"), "kN"), "Taux", "Ferraillage", "État"],
+                       lignes, ["", "c", "c", "el", "", "n", "n", "n", "", "c"],
+                       largeurs=[6, 10, 5, 18, 12, 9, 9, 7, 13, 11], titre="Types de poteaux"))
     p = max(liste, key=lambda x: x.get("nu_rapport") or 0)
     a, b = p.get("a_cm") or 0, p.get("b_cm") or 0
     fer = p.get("ferraillage") or {}
@@ -573,15 +671,17 @@ def section_poutres(liste: List[dict], m: dict) -> str:
     for t in types:
         e = max(t["elements"], key=lambda p: p.get("as_retenue_cm2") or 0)
         els, tau = e.get("els") or {}, e.get("effort_tranchant") or {}
-        lignes.append([t["code"], f"{fr(e.get('b_cm'), 0)} × {fr(e.get('h_cm'), 0)}", str(len(t["elements"])), esc(liste_noms(t["noms"])),
+        lignes.append([t["code"], f"{fr(e.get('b_cm'), 0)} × {fr(e.get('h_cm'), 0)}", str(len(t["elements"])),
+                       esc(reperes(t, "Pt")), esc(niveaux(t)),
                        fr(e.get("mu_knm"), 1) if e.get("mu_knm") is not None else "—", fr(e.get("as_retenue_cm2")),
                        esc((e.get("ferraillage") or {}).get("choix")),
                        f"{fr(els.get('sigma_st_mpa'), 0)} / {fr(els.get('sigma_st_lim_mpa'), 0)}",
                        f"{fr(tau.get('tau_u_mpa'), 2)} / {fr(tau.get('tau_u_lim_mpa'), 2)}", etat(t["ok"])])
     out.append("<p>Les poutres de même section et de même ferraillage sont regroupées en types :</p>")
-    out.append(tableau(["Type", "b × h (cm)", "Nb", "Éléments", im("M_u") + " (kN·m)", im("A_s") + " (cm²)", "Ferraillage",
-                        im(r"\sigma_{st}") + " / lim (MPa)", im(r"\tau_u") + " / lim (MPa)", "État"],
-                       lignes, ["", "c", "c", "el", "n", "n", "", "n", "n", "c"], largeurs=[5, 9, 5, 25, 8, 7, 11, 10, 9, 11]))
+    out.append(tableau(["Type", ent("b × h", "cm"), "Nb", "Repères", "Niveaux", ent(im("M_u"), "kN·m"), ent(im("A_s"), "cm²"),
+                        "Ferraillage", ent(im(r"\sigma_{st} / \overline{\sigma}_{st}"), "MPa"), ent(im(r"\tau_u / \overline{\tau}_u"), "MPa"), "État"],
+                       lignes, ["", "c", "c", "el", "", "n", "n", "", "n", "n", "c"],
+                       largeurs=[5, 9, 4, 14, 11, 8, 7, 11, 10, 11, 10], titre="Types de poutres"))
     p = max(liste, key=lambda x: x.get("mu_knm") or x.get("as_retenue_cm2") or 0)
     els, tau = p.get("els") or {}, p.get("effort_tranchant") or {}
     b, d = (p.get("b_cm") or 0) / 100, p.get("d_m") or 0
@@ -622,10 +722,11 @@ def section_semelles(liste: List[dict], m: dict) -> str:
     lignes = []
     for t in types:
         e = max(t["elements"], key=lambda s: s.get("nu_kn_utilise") or 0)
-        lignes.append([t["code"], str(len(t["elements"])), esc(liste_noms(t["noms"])), fr(e.get("A_m")), fr(e.get("B_m")), fr(e.get("H_m")),
+        lignes.append([t["code"], str(len(t["elements"])), esc(reperes(t, "S")), fr(e.get("A_m")), fr(e.get("B_m")), fr(e.get("H_m")),
                        fr(e.get("sigma_max_bar"), 2), esc(e.get("acier_x")), esc(e.get("acier_y")), etat(t["ok"])])
-    out.append(tableau(["Type", "Nb", "Éléments", im("A") + " (m)", im("B") + " (m)", im("H") + " (m)", im(r"\sigma_{\max}") + " (bar)",
-                        "Nappe X", "Nappe Y", "État"], lignes, ["", "c", "el", "n", "n", "n", "n", "", "", "c"], largeurs=[6, 5, 25, 7, 7, 7, 9, 11, 11, 12]))
+    out.append(tableau(["Type", "Nb", "Repères", ent(im("A"), "m"), ent(im("B"), "m"), ent(im("H"), "m"), ent(im(r"\sigma_{\max}"), "bar"),
+                        "Nappe X", "Nappe Y", "État"], lignes, ["", "c", "el", "n", "n", "n", "n", "", "", "c"],
+                       largeurs=[6, 5, 23, 8, 8, 8, 9, 11, 11, 11], titre="Types de semelles"))
     s = max(liste, key=lambda x: x.get("nu_kn_utilise") or 0)
     po = s.get("poinconnement") or {}
     out.append(f"<h4>Exemple de calcul : semelle la plus chargée, {esc(_nom(s, 0, 'S'))}</h4>")
@@ -656,12 +757,14 @@ def section_voiles(liste: List[dict], m: dict) -> str:
     lignes = []
     for t in types:
         e = max(t["elements"], key=lambda v: v.get("sigma_max_mpa") or 0)
-        lignes.append([t["code"], f"{fr(e.get('longueur_m'))} × {fr(e.get('ep_cm'), 0)}", str(len(t["elements"])), esc(liste_noms(t["noms"])),
+        lignes.append([t["code"], f"{fr(e.get('longueur_m'))} × {fr(e.get('ep_cm'), 0)}", str(len(t["elements"])),
+                       esc(reperes(t, "V")), esc(niveaux(t)),
                        fr(e.get("sigma_max_mpa")), fr(e.get("sigma_min_mpa")), fr(e.get("tau_u_mpa"), 3), fr(e.get("as_rive_cm2")),
                        f"{fr(e.get('as_vert_par_m_cm2'))} / {fr(e.get('as_horiz_par_m_cm2'))}", etat(t["ok"])])
-    out.append(tableau(["Type", "L (m) × e (cm)", "Nb", "Éléments", im(r"\sigma_{\max}") + " (MPa)", im(r"\sigma_{\min}") + " (MPa)",
-                        im(r"\tau_u") + " (MPa)", "As rive (cm²)", "As V / H (cm²/m)", "État"],
-                       lignes, ["", "c", "c", "el", "n", "n", "n", "n", "n", "c"], largeurs=[5, 10, 5, 23, 8, 8, 8, 8, 14, 11]))
+    out.append(tableau(["Type", ent("L × e", "m × cm"), "Nb", "Repères", "Niveaux", ent(im(r"\sigma_{\max}"), "MPa"),
+                        ent(im(r"\sigma_{\min}"), "MPa"), ent(im(r"\tau_u"), "MPa"), ent("As rive", "cm²"), ent("As V / H", "cm²/m"), "État"],
+                       lignes, ["", "c", "c", "el", "", "n", "n", "n", "n", "n", "c"],
+                       largeurs=[6, 10, 4, 9, 11, 9, 9, 8, 8, 14, 12], titre="Types de voiles"))
     v = max(liste, key=lambda x: x.get("sigma_max_mpa") or 0)
     e_m, L = (v.get("ep_cm") or 0) / 100, v.get("longueur_m") or 0
     out.append(f"<h4>Exemple de calcul : voile le plus sollicité, {esc(_nom(v, 0, 'V'))}</h4>")
@@ -707,12 +810,12 @@ def quantites(inp: dict) -> str:
     lignes.append(["<b>Total</b>", f"<b>{fr(tv, 2)}</b>", f"<b>{fr(ta, 0)}</b>" if ta else "—", f"<b>{fr(ta / tv, 0)}</b>" if ta and tv else "—"])
     out.append("<p>Le tableau ci-dessous récapitule les quantités de béton et d'acier des éléments étudiés. Elles sont "
                "données à titre indicatif pour l'estimation et ne remplacent pas le métré des plans d'exécution.</p>")
-    out.append(tableau(["Famille", "Béton (m³)", "Acier (kg)", "Ratio (kg/m³)"], lignes, ["", "n", "n", "n"]))
+    out.append(tableau(["Famille", ent("Béton", "m³"), ent("Acier", "kg"), ent("Ratio", "kg/m³")], lignes, ["", "n", "n", "n"],
+                       largeurs=[37, 21, 21, 21], titre="Quantités de béton et d'acier par famille"))
     if nomen:
-        out.append("<h3>Acier par diamètre</h3>")
-        out.append(tableau(["Diamètre", "kg/m", "Poids (kg)"],
+        out.append(tableau(["Diamètre", ent("Masse linéique", "kg/m"), ent("Poids", "kg")],
                            [[f"HA{d}", fr(poids_ml(d), 3), fr(kg, 1)] for d, kg in nomen["par_diametre_kg"].items()],
-                           ["", "n", "n"]))
+                           ["", "n", "n"], largeurs=[37, 31, 32], titre="Acier par diamètre"))
     out.append('<p class="note">Béton : volumes géométriques des éléments calculés (hors dalles, longrines et escaliers). '
                "Acier : longueurs façonnées des éléments vérifiés, recouvrements et crochets compris (voir la nomenclature des plans).</p>")
     return "".join(out)
@@ -747,8 +850,9 @@ def conclusion(inp: dict, bur: dict, date: str) -> str:
 
 
 def construire(inp: dict, bur: dict) -> str:
-    global EQ
+    global EQ, TAB
     EQ = Equations()
+    TAB = Tableaux()
     date = datetime.date.today().strftime("%d/%m/%Y")
     m = materiaux(inp)
     titre = inp.get("projet") or "Projet"

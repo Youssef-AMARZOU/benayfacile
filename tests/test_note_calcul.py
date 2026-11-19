@@ -74,8 +74,18 @@ def test_exemples_de_calcul_avec_valeurs_reelles(note_r4):
 def test_types_regroupes_et_quantites(note_r4):
     html, inp = note_r4
     assert ">P1<" in html and ">Pt1<" in html and ">S1<" in html and ">V1<" in html
-    assert "Ratio (kg/m³)" in html and "Acier par diamètre" in html
+    assert 'Ratio<br><span class="u">(kg/m³)</span>' in html and "Acier par diamètre" in html
     assert "HA32" not in html                       # aciers de poutre constructibles
+
+
+def test_tableaux_legendes_numerotees_et_hypotheses_en_quatre_colonnes(note_r4):
+    html, _ = note_r4
+    numeros = [int(n) for n in re.findall(r"<caption>Tableau (\d+) — ", html)]
+    assert numeros == list(range(1, len(numeros) + 1)) and len(numeros) >= 15
+    for titre in ("Caractéristiques du béton", "Types de poteaux", "Types de poutres", "Acier par diamètre"):
+        assert f"— {titre}</caption>" in html, titre
+    assert "<th>Symbole</th>" in html.replace('<th class="c">Symbole</th>', "<th>Symbole</th>")
+    assert "Repères" in html and "Niveaux" in html
 
 
 def test_reserves_listees_quand_un_element_echoue(note_r4):
