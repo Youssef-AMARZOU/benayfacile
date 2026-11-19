@@ -258,3 +258,78 @@ Benayfacile_donnees\
   positifs (SmartScreen). La parade est une signature de code.
 - **Ports fixes** (8001-8004, 8090) : ils sont hérités de l'architecture
   microservices. Le port 8080 était déjà occupé sur ce poste.
+
+## 8. v0.3.0 — application de bureau (comme un logiciel installé)
+
+Objectif : un ingénieur non technicien installe et lance Bénayfacile comme
+SolidWorks ou AutoCAD, sans console, sans navigateur, sans port à connaître.
+
+| Avant (v0.2.0) | Maintenant (v0.3.0) |
+|---|---|
+| Console + onglet de navigateur | Fenêtre native unique (`launcher/window.py`) |
+| Ports fixes 8001-8004, 8090 (conflits possibles) | Ports libres attribués par le système (socket lié au port 0) |
+| Garde « ports occupés » | Instance unique par mutex Windows (`launcher/desktop.py`) |
+| Erreurs dans la console | Boîtes de dialogue Windows + journal `logs\benayfacile.log` |
+| Données à côté de l'exe | `%LOCALAPPDATA%\Benayfacile` (installable dans Program Files) |
+| Exe « un seul fichier » (décompression à chaque lancement) | Dossier `dist\Benayfacile\` + installateur Inno Setup |
+| Note de calcul dans un nouvel onglet | Aperçu intégré + bouton « Imprimer / PDF » |
+
+### 8.1 Strategy — la coquille d'affichage (`launcher/window.py`)
+
+```mermaid
+classDiagram
+    direction LR
+    class Coquille {
+        <<Strategy>>
+        +nom: str
+        +disponible() bool
+        +executer(app)
+    }
+    class FenetreNative {
+        pywebview + WebView2
+    }
+    class FenetreEdgeApp {
+        msedge --app
+    }
+    class Navigateur {
+        navigateur par défaut
+    }
+    Coquille <|-- FenetreNative
+    Coquille <|-- FenetreEdgeApp
+    Coquille <|-- Navigateur
+    class executer_avec_repli {
+        <<Chain of Responsibility>>
+    }
+    executer_avec_repli ..> Coquille : essaie dans l'ordre
+```
+
+`executer_avec_repli()` essaie les stratégies dans l'ordre (chaîne de
+responsabilité) : si WebView2 manque sur un vieux poste, l'application s'ouvre
+dans Edge en mode application, sans barre d'adresse ; en dernier recours, dans
+le navigateur. Une erreur de l'application elle-même (`DemarrageImpossible`)
+n'entraîne pas de repli : elle est affichée dans une boîte de dialogue.
+
+### 8.2 Séquence de démarrage dans la fenêtre native
+
+```mermaid
+sequenceDiagram
+    actor U as Ingénieur
+    participant M as main()
+    participant W as FenetreNative
+    participant F as BenayfacileApp
+    U->>M: clic sur l'icône Bénayfacile
+    M->>M: journal + mutex (instance unique)
+    M->>W: executer(app)
+    W->>U: fenêtre « Démarrage du moteur de calcul… »
+    W->>F: demarrer() (thread)
+    F->>F: 4 services sur ports libres, puis passerelle (lit BNAY_URL_*)
+    W->>U: load_url(passerelle) : tableau de bord
+    U->>W: ferme la fenêtre
+    M->>F: arreter()
+```
+
+### 8.3 Adapter, version sockets
+
+`ManagedServer` lie lui-même un socket au port 0 et le passe à
+`uvicorn.Server.run(sockets=[...])`. Le port est réservé avant le démarrage
+du serveur : aucune course entre « port libre ? » et « j'écoute ».

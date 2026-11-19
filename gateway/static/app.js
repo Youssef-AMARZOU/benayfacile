@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
-  project: { projet: 'Immeuble R+4 — Casablanca', client: 'SARL Exemple', site: 'Casablanca, Maroc', indice: 'A' },
+  project: { projet: '', client: '', site: '', indice: 'A', objet: '', architecte: '', controle: '', laboratoire: '', phase: 'Exécution' },   // projet de l'utilisateur, vierge au démarrage
   robot: null,
   sismique: null,
   poteaux: [], poutres: [], semelles_isolees: [], semelles_filantes: [], voiles: [],
@@ -12,57 +12,182 @@ const state = {
 };
 
 const MODULES = [
-  { id: 'poteau', label: 'Poteau' },
-  { id: 'sismique', label: 'Vérification Sismique' },
-  { id: 'semelle', label: 'Semelles Isolées' },
-  { id: 'semelle_filante', label: 'Semelles Filantes' },
-  { id: 'poutre', label: 'Poutre' },
-  { id: 'voile', label: 'Voiles de Contreventement' },
-  { id: 'synthese', label: 'Synthèse de Calcul' },
-  { id: 'bureau', label: 'Données de votre bureau' },
+  { id: 'projet', label: 'Projet Robot', groupe: 'Projet', ref: 'Tout le modèle' },
+  { id: 'poteau', label: 'Poteau', groupe: 'Éléments', ref: 'BAEL 91 · B.8.4' },
+  { id: 'poutre', label: 'Poutre', groupe: 'Éléments', ref: 'BAEL 91 · flexion simple' },
+  { id: 'semelle', label: 'Semelles isolées', groupe: 'Éléments', ref: 'Méthode des bielles' },
+  { id: 'semelle_filante', label: 'Semelles filantes', groupe: 'Éléments', ref: 'Méthode des bielles' },
+  { id: 'voile', label: 'Voiles', groupe: 'Éléments', ref: 'BAEL B.8.4' },
+  { id: 'sismique', label: 'Vérification sismique', groupe: 'Bâtiment', ref: 'RPS 2000 v2011' },
+  { id: 'synthese', label: 'Synthèse de calcul', groupe: 'Livrables', ref: 'Note + plan DXF' },
+  { id: 'bureau', label: 'Votre bureau', groupe: 'Réglages', ref: 'Page de garde et cartouche' },
 ];
 
+/* Glyphes : la section de chaque élément, aciers en rouge (classe .acier / .acier-l). */
+const GLYPHES = {
+  projet: '<path d="M4 23V9l9-5 9 5v14"/><path d="M4 23h18 M4 16h18 M4 9.5h18 M13 4.5V23"/><circle class="acier" cx="4" cy="23" r="1.6"/><circle class="acier" cx="13" cy="23" r="1.6"/><circle class="acier" cx="22" cy="23" r="1.6"/>',
+  poteau: '<rect x="5" y="5" width="16" height="16"/><rect x="8" y="8" width="10" height="10" stroke-width="1" stroke-dasharray="1.6 1.3"/><circle class="acier" cx="9" cy="9" r="1.7"/><circle class="acier" cx="17" cy="9" r="1.7"/><circle class="acier" cx="9" cy="17" r="1.7"/><circle class="acier" cx="17" cy="17" r="1.7"/>',
+  poutre: '<rect x="2" y="8" width="22" height="8"/><path class="acier-l" d="M4 13.6h18"/><path d="M5 16l-2.2 4h4.4z M21 16l-2.2 4h4.4z"/>',
+  semelle: '<path d="M10.5 2.5v9 M15.5 2.5v9"/><path d="M10.5 11.5 3 15v6h20v-6l-7.5-3.5"/><path class="acier-l" d="M5 19h16"/>',
+  semelle_filante: '<rect x="2" y="7" width="22" height="12"/><rect x="2" y="10.5" width="22" height="5" stroke-width="1"/><path class="acier-l" d="M6 7v12 M11 7v12 M16 7v12 M21 7v12" stroke-dasharray="0" opacity=".9"/>',
+  voile: '<rect x="8" y="2" width="10" height="22"/><path class="acier-l" d="M10.5 3.5v19 M15.5 3.5v19"/><path d="M8.5 8h9 M8.5 13h9 M8.5 18h9" stroke-width=".9"/>',
+  sismique: '<path d="M2 19.5h22"/><path d="M8 19.5V6h10v13.5 M8 11h10 M8 15.5h10"/><path class="acier-l" d="M2 23.2c1.6-1.8 2.9 1.8 4.5 0s2.9 1.8 4.5 0 2.9 1.8 4.5 0 2.9 1.8 4.5 0 1.9 1.2 2 0"/>',
+  synthese: '<path d="M6 2h10l5 5v17H6z"/><path d="M16 2v5h5"/><path class="acier-l" d="M9 12h9"/><path d="M9 15.5h9 M9 19h6"/>',
+  bureau: '<rect x="2" y="6" width="22" height="14"/><path d="M2 12.5h22 M15 6v14 M15 16.2h9"/><path class="acier-l" d="M4.5 9.2h8"/>',
+};
+const glyphe = (id, cls = 'glyphe') => `<svg class="${cls}" viewBox="0 0 26 26" aria-hidden="true">${GLYPHES[id] || ''}</svg>`;
+function vide(id, texte = 'Saisissez les données puis lancez le calcul.') {
+  return `<div class="vide">${glyphe(id, 'glyphe')}<span>${texte}</span></div>`;
+}
+
 /* ---------- helpers ---------- */
+/* ---------- erreurs lisibles ----------
+   Les erreurs de validation du serveur (FastAPI / pydantic, 422) arrivent en JSON technique,
+   en anglais. On les traduit en phrases courtes, rattachées au champ concerné. */
+const nb = (v) => (typeof v === 'number' ? v.toLocaleString('fr-FR') : v);
+const MESSAGES_VALIDATION = {
+  greater_than: c => `doit être supérieur à ${nb(c.gt)}`,
+  greater_than_equal: c => `doit être au moins égal à ${nb(c.ge)}`,
+  less_than: c => `doit être inférieur à ${nb(c.lt)}`,
+  less_than_equal: c => `doit être au plus égal à ${nb(c.le)}`,
+  missing: () => 'est obligatoire',
+  float_parsing: () => 'doit être un nombre', float_type: () => 'doit être un nombre',
+  int_parsing: () => 'doit être un nombre entier', int_from_float: () => 'doit être un nombre entier',
+  finite_number: () => 'doit être un nombre',
+  string_type: () => 'doit être un texte',
+};
+class ErreurApi extends Error {
+  constructor(message, champs = []) { super(message); this.champs = champs; }
+}
+function traduireDetail(detail) {
+  if (Array.isArray(detail)) {
+    const champs = detail.map(d => ({
+      cle: Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : '',
+      message: (MESSAGES_VALIDATION[d.type] || (() => d.msg || 'valeur invalide'))(d.ctx || {}),
+    }));
+    return new ErreurApi(champs.map(c => `${c.cle} ${c.message}`).join(' ; '), champs);
+  }
+  return new ErreurApi(typeof detail === 'string' ? detail : 'Réponse inattendue du serveur.');
+}
 async function api(path, opts = {}) {
-  const r = await fetch(path, opts);
+  let r;
+  try { r = await fetch(path, opts); }
+  catch { throw new ErreurApi('Le moteur de calcul ne répond pas. Relancez Bénayfacile, puis réessayez.'); }
   const txt = await r.text();
   let body; try { body = JSON.parse(txt); } catch { body = txt; }
-  if (!r.ok) throw new Error((body && body.detail) ? JSON.stringify(body.detail) : (typeof body === 'string' ? body : JSON.stringify(body)));
+  if (!r.ok) {
+    if (body && body.detail !== undefined) throw traduireDetail(body.detail);
+    if (r.status >= 500) throw new ErreurApi('Erreur interne du service de calcul. Le détail est dans le journal de Bénayfacile.');
+    throw new ErreurApi(typeof body === 'string' && body.length < 300 ? body : `Erreur ${r.status}.`);
+  }
   return body;
 }
-function field(id, label, value, type = 'number', step = 'any') {
+
+/* Affiche une erreur : sous chaque champ concerné (si `champs` relie clés du serveur → id des
+   champs) et en résumé dans `el`. Le premier champ fautif reçoit le focus. */
+function libelleChamp(id) {
+  const l = document.querySelector(`label[for="${id}"]`);
+  return l ? l.textContent.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+—.*$/, '').trim() : id;
+}
+function effacerErreurs(racine = document) {
+  racine.querySelectorAll('.invalide').forEach(i => { i.classList.remove('invalide'); i.removeAttribute('aria-invalid'); i.removeAttribute('aria-describedby'); });
+  racine.querySelectorAll('.erreur-champ').forEach(p => p.remove());
+}
+function afficherErreur(el, e, champs = {}, prefixe = '') {
+  effacerErreurs((el && el.closest('.tab')) || document);
+  const lignes = [];
+  let premier = null;
+  for (const c of (e && e.champs) || []) {
+    const id = champs[c.cle];
+    const input = id && $(id);
+    if (input) {
+      const lib = libelleChamp(id);
+      const p = document.createElement('p');
+      p.className = 'erreur-champ'; p.id = `${id}-erreur`; p.textContent = `${lib} ${c.message}.`;
+      input.classList.add('invalide'); input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', p.id);
+      input.closest('.field').appendChild(p);
+      input.addEventListener('input', () => { input.classList.remove('invalide'); input.removeAttribute('aria-invalid'); p.remove(); }, { once: true });
+      lignes.push(`${lib} ${c.message}`);
+      premier = premier || input;
+    } else {
+      lignes.push(`${c.cle} ${c.message}`);
+    }
+  }
+  const texte = lignes.length ? `Corrigez ${lignes.length > 1 ? 'les champs' : 'le champ'} : ${lignes.join(' ; ')}.` : (e && e.message) || 'Erreur.';
+  if (el) el.innerHTML = `<p class="warn" role="alert">${esc(prefixe)}${esc(texte)}</p>`;
+  if (premier) premier.focus();
+}
+function aideHtml(id) {
+  const a = aideChamp(id);
+  return a ? { p: `<p class="aide" id="${id}-aide">${esc(a)}</p>`, attr: ` aria-describedby="${id}-aide"` } : { p: '', attr: '' };
+}
+function field(id, label, value, type = 'number', step = 'any', exemple = null) {
+  const a = aideHtml(id);
+  const ph = exemple != null ? ` placeholder="ex. ${esc(exemple)}"` : '';
   return `<div class="field"><label for="${id}">${label}</label>
-    <input id="${id}" type="${type}" step="${step}" value="${esc(value)}"></div>`;
+    <input id="${id}" type="${type}" step="${step}" value="${esc(value)}"${ph}${a.attr}>${a.p}</div>`;
+}
+/* Champs obligatoires vides : erreur « est obligatoire » rattachée au champ, sans appeler le serveur. */
+function exiger(champs, cles) {
+  const vides = cles.filter(c => champs[c] && $(champs[c]) && $(champs[c]).value.trim() === '');
+  if (vides.length) throw new ErreurApi('', vides.map(c => ({ cle: c, message: 'est obligatoire' })));
 }
 function select(id, label, options, value) {
   const opts = options.map(([v, l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`).join('');
-  return `<div class="field"><label for="${id}">${label}</label><select id="${id}">${opts}</select></div>`;
+  const a = aideHtml(id);
+  return `<div class="field"><label for="${id}">${label}</label><select id="${id}"${a.attr}>${opts}</select>${a.p}</div>`;
 }
 function row2(a, b) { return `<div class="row">${a}${b}</div>`; }
+const VERDICT = { 'OK': 'ok', 'OUI': 'ok', 'NON': 'ko', 'NON VÉRIFIÉ': 'ko' };
+/* items : [libellé, valeur, clé?] — « clé » met la ligne en évidence (résultat principal). */
 function kv(items) {
-  return `<div class="kv">${items.map(([k, v]) => `<div class="item"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('')}</div>`;
+  return `<div class="kv">${items.map(([k, v, cle]) => {
+    const verdict = VERDICT[String(v ?? '').trim()] || '';
+    const expl = GLOSSAIRE[k];
+    return `<div class="item${cle ? ' cle' : ''}"><span class="k"${expl ? ` title="${esc(expl)}"` : ''}>${esc(k)}</span><span class="fil"></span><span class="v ${verdict}" title="${esc(v)}">${esc(v ?? '—')}</span>${expl ? `<span class="expl">${esc(expl)}</span>` : ''}</div>`;
+  }).join('')}</div>`;
 }
-function renderRaw(r) { return `<details><summary>Détail brut (JSON)</summary><pre class="raw">${esc(JSON.stringify(r, null, 2))}</pre></details>`; }
-function warns(list) { return (list || []).map(w => `<p class="warn">⚠ ${esc(w)}</p>`).join(''); }
+function renderRaw(r) { return `<details class="brut"><summary>Détail brut (JSON)</summary><pre class="raw">${esc(JSON.stringify(r, null, 2))}</pre></details>`; }
+function warns(list) { return (list || []).map(w => `<p class="warn">${esc(w)}</p>`).join(''); }
 function notes(list) { return (list || []).map(w => `<p class="note">${esc(w)}</p>`).join(''); }
-function spinner(el) { el.innerHTML = '<span class="spinner"></span> calcul en cours…'; }
+function spinner(el) {
+  effacerErreurs(el.closest('.tab') || document);
+  el.innerHTML = '<p class="small" role="status"><span class="spinner"></span>Calcul en cours…</p>';
+}
 
 /* ---------- santé des services ---------- */
 async function checkHealth() {
   try {
     const h = await api('/health');
-    $('health').innerHTML = Object.entries(h.services).map(([k, v]) =>
-      `<span class="pill ${String(v).startsWith('ok') ? '' : 'ko'}">${esc(k)}: ${esc(v)}</span>`).join('');
+    const entrees = Object.entries(h.services);
+    const ko = entrees.filter(([, v]) => !String(v).startsWith('ok'));
+    const voyants = entrees.map(([k, v]) =>
+      `<span class="voyant ${String(v).startsWith('ok') ? '' : 'ko'}" title="${esc(k)} : ${esc(v)}"></span>`).join('');
+    $('health').innerHTML = `<span class="voyants">${voyants}</span>` + (ko.length
+      ? `<span class="etat-ko">Service indisponible : ${ko.map(([k]) => esc(k)).join(', ')}</span>`
+      : '<span>Moteur de calcul prêt</span>');
   } catch (e) {
-    $('health').innerHTML = '<span class="pill ko">gateway injoignable</span>';
+    $('health').innerHTML = '<span class="voyants"><span class="voyant ko"></span></span><span class="etat-ko">Passerelle injoignable. Relancez Bénayfacile.</span>';
   }
+}
+
+/* ---------- cartouche (bloc-titre) ---------- */
+function renderCartouche() {
+  const el = $('cartouche'); if (!el) return;
+  const p = state.project;
+  el.innerHTML = `<div class="c-projet"><div class="c-k">Projet</div><div class="c-v"${p.projet ? ' translate="no"' : ''}>${esc(p.projet || 'Sans titre')}</div></div>
+    <div><div class="c-k">Maître d'ouvrage</div><div class="c-v" translate="no" title="${esc(p.client)}">${esc(p.client || '—')}</div></div>
+    <div class="c-indice"><div class="c-k">Indice</div><div class="c-v">${esc(p.indice || '—')}</div></div>
+    <div class="c-foi">Les textes officiels BAEL et RPS font foi.</div>`;
 }
 
 /* ---------- synthèse ---------- */
 function synthesisPayload() {
   return {
     projet: state.project.projet, client: state.project.client, site: state.project.site,
-    indice: state.project.indice,
+    indice: state.project.indice, objet: state.project.objet, architecte: state.project.architecte,
+    controle: state.project.controle, laboratoire: state.project.laboratoire, phase: state.project.phase,
+    lot: state.lot || undefined,
     robot: state.robot || undefined, sismique: state.sismique || undefined,
     poteaux: state.poteaux, poutres: state.poutres,
     semelles_isolees: state.semelles_isolees, semelles_filantes: state.semelles_filantes,
@@ -76,8 +201,8 @@ function addToSynthesis(type, item) {
 }
 function toast(msg) {
   const t = document.createElement('div');
+  t.className = 'toast'; t.setAttribute('role', 'status');
   t.textContent = msg;
-  t.style.cssText = 'position:fixed;bottom:18px;right:18px;background:#0e2a47;color:#ffd86b;padding:10px 18px;border-radius:8px;z-index:99;box-shadow:0 4px 14px rgba(0,0,0,.35);font-size:.85rem';
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
@@ -94,13 +219,14 @@ function renderSynthesis() {
     state[key].forEach((item, i) => {
       let desc = '';
       if (key === 'poteaux') desc = `${item.a_cm}×${item.b_cm} cm — Nu ${item.nu_kn} kN — ${item.ferraillage?.choix || ''}`;
-      else if (key === 'poutres') desc = `b×h ${item.b_cm}×${item.h_cm} cm — Mu ${item.mu} — ${item.ferraillage?.choix || ''}`;
+      else if (key === 'poutres') desc = `b×h ${item.b_cm}×${item.h_cm} cm — ${item.mu_knm != null ? `Mu ${item.mu_knm} kN.m` : `μ ${item.mu}`} — ${item.ferraillage?.choix || ''}`;
       else if (key === 'voiles') desc = `L = ${item.longueur_m} m — σmax ${item.sigma_max_mpa} MPa`;
       else desc = `A ${item.A_m} × B ${item.B_m} — H ${item.H_m} m — ${item.acier_x} / ${item.acier_y}`;
-      html += `<li><span><b>${esc(label)} #${i + 1}</b> — ${esc(desc)}</span><button data-del="${key}" data-idx="${i}">✕</button></li>`;
+      const titre = item.nom ? `${item.nom}${item.niveau ? ' · ' + item.niveau : ''}` : `${label} #${i + 1}`;
+      html += `<li><span><b>${esc(titre)}</b> — ${esc(desc)}</span><button data-del="${key}" data-idx="${i}">✕</button></li>`;
     });
   }
-  box.innerHTML = html || '<li><span class="small">Aucun élément — calculez d’abord les modules, puis « Ajouter à la synthèse ».</span></li>';
+  box.innerHTML = html || '<li><span class="small">Aucun élément pour l’instant. Calculez un élément, puis « Ajouter à la synthèse ». Ou chargez le scénario démo R+4.</span></li>';
   box.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => {
     const k = btn.dataset.del;
     if (k === 'robot') state.robot = null;
@@ -110,20 +236,246 @@ function renderSynthesis() {
   }));
 }
 
+/* ============ MODULE: PROJET ROBOT (tout le modèle) ============ */
+const FAMILLES = [
+  { cle: 'poteaux', label: 'Poteaux', synthese: 'poteaux',
+    cols: [['Niveau', l => l.niveau], ['Section', l => dim(l.entree.a_cm, l.entree.b_cm)], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
+           ['Nu/Nu,lim', l => l.resultat?.nu_rapport, 'n'], ['As (cm²)', l => l.resultat?.as_calculee_cm2, 'n'], ['Ferraillage', l => l.resultat?.ferraillage?.choix]] },
+  { cle: 'poutres', label: 'Poutres', synthese: 'poutres',
+    cols: [['Niveau', l => l.niveau], ['Section', l => dim(l.entree.b_cm, l.entree.h_cm)], ['Portée (m)', l => l.entree.portee_m, 'n'],
+           ['Mu (kN.m)', l => l.entree.mu_knm, 'n'], ['As (cm²)', l => l.resultat?.as_retenue_cm2, 'n'], ['Ferraillage', l => l.resultat?.ferraillage?.choix]] },
+  { cle: 'semelles', label: 'Semelles', synthese: 'semelles_isolees',
+    cols: [['Poteau', l => dim(l.entree.a_poteau_cm, l.entree.b_poteau_cm)], ['Ns (kN)', l => l.entree.ns_kn, 'n'], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
+           ['A × B (m)', l => l.resultat ? `${l.resultat.A_m} × ${l.resultat.B_m}` : null, 'n'], ['H (m)', l => l.resultat?.H_m, 'n'],
+           ['Acier X / Y', l => l.resultat ? `${l.resultat.acier_x} / ${l.resultat.acier_y}` : null]] },
+  { cle: 'voiles', label: 'Voiles', synthese: 'voiles',
+    cols: [['Niveau', l => l.niveau], ['L × e', l => l.entree.longueur_m != null ? `${l.entree.longueur_m} m × ${l.entree.ep_cm ?? '?'} cm` : null],
+           ['N (kN)', l => l.entree.n_kn, 'n'], ['M (kN.m)', l => l.entree.m_knm, 'n'], ['σmax (MPa)', l => l.resultat?.sigma_max_mpa, 'n'],
+           ['As rive (cm²)', l => l.resultat?.as_rive_cm2, 'n']] },
+];
+const STATUTS = { verifie: 'Vérifié', a_revoir: 'À revoir', incomplet: 'Incomplet', erreur: 'Erreur' };
+function dim(a, b) { return a != null && b != null ? `${a} × ${b}` : null; }
+
+const CH_PROJET = { fc28_mpa: 'rb-fc', fe_mpa: 'rb-fe', sigma_sol_bar: 'rb-sol' };
+function tabProjet() {
+  const vue = { modele: null, lot: null, famille: 'poteaux', aRevoir: false };
+  const fissOpts = [['peu_prejudiciable', 'Peu préjudiciable'], ['prejudiciable', 'Préjudiciable'], ['tres_prejudiciable', 'Très préjudiciable']];
+  return {
+    html: `<div class="bandeau-photos">
+  <div class="photo p1" aria-hidden="true"></div><div class="photo p2" aria-hidden="true"></div><div class="photo p3" aria-hidden="true"></div>
+  <div class="bandeau-texte"><span class="bandeau-titre">Du modèle Robot au plan de ferraillage</span>
+    <span class="bandeau-sous">Lecture du modèle, calcul BAEL 91 / RPS 2011, note de calcul, Excel et plans DXF</span></div>
+</div>
+<h1 class="module-title">Projet Robot <small>Lecture du modèle Robot Structural Analysis et calcul de tous les éléments : poteaux, poutres, semelles, voiles (BAEL 91 rév. 99)</small></h1>
+<div class="grid pile"><div class="card projet-commandes">
+  <div class="etape">
+    <h2>Modèle</h2>
+    <div class="actions"><button class="btn" id="rb-ouvrir">Ouvrir un fichier Robot (.rtd)</button>
+      <button class="btn ghost small" id="rb-xlsx-import">Importer un classeur Excel</button>
+      <button class="btn ghost small" id="rb-lire">Lire le projet déjà ouvert dans Robot</button>
+      <button class="btn ghost small" id="rb-demo">Essayer avec l'exemple R+4</button>
+      <input type="file" id="rb-xlsx-fichier" accept=".xlsx,.xlsm" hidden></div>
+    <p class="small modele-xlsx">Sans Robot : <a href="/api/robot/modele-excel" download="Modele_Benayfacile.xlsx">téléchargez le modèle Excel</a>, remplissez-le, puis importez-le.</p>
+    <div class="chemin-rtd" id="rb-chemin-zone" hidden>
+      ${field('rb-chemin', "Chemin du fichier Robot (.rtd)", '', 'text', 'any', 'C:\\Projets\\Residence.rtd')}
+      <button class="btn small" id="rb-chemin-ok">Ouvrir dans Robot</button>
+    </div>
+    <div class="result" id="rb-modele"><p class="small">Choisissez votre fichier Robot : Bénayfacile le fait ouvrir et calculer par Robot, puis lit tous les éléments. Robot Structural Analysis doit être installé sur ce poste.</p></div>
+  </div>
+  <div class="etape">
+    <h2>Matériaux et sol</h2>
+    ${row2(field('rb-fc', "fc28 (MPa)", 25), field('rb-fe', "fe (MPa)", 500))}
+    ${row2(field('rb-sol', "σsol admissible (bar)", '', 'number', 'any', 2.0), select('rb-fis', "Fissuration", fissOpts, 'prejudiciable'))}
+    <div class="actions">
+      <button class="btn gold" id="rb-calc" disabled>Calculer tout le modèle</button>
+      <button class="btn ghost small" id="rb-add" disabled>Envoyer à la synthèse</button>
+      <button class="btn ghost small" id="rb-xlsx" disabled>Exporter en Excel</button>
+      <button class="btn ghost small" id="rb-dxf" disabled>Plans de ferraillage (DXF)</button>
+    </div>
+    <div class="export" id="rb-xlsx-res"></div>
+    <div class="export" id="rb-dxf-res"></div>
+  </div>
+</div>
+<div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
+    init() {
+      /* demo : exemple R+4 ; chemin : .rtd à faire ouvrir par Robot ; sinon : projet déjà ouvert dans Robot. */
+      const lire = async (demo, chemin = null, fichier = null) => {
+        const el = $('rb-modele');
+        effacerErreurs($('tab-projet'));
+        el.innerHTML = chemin
+          ? '<p class="small" role="status"><span class="spinner"></span>Ouverture du projet dans Robot et analyse… Cela peut prendre quelques minutes.</p>'
+          : '<p class="small" role="status"><span class="spinner"></span>Lecture du modèle…</p>';
+        let envoi = null;
+        if (fichier) { envoi = new FormData(); envoi.append('fichier', fichier); }
+        try {
+          const r = envoi ? await api('/api/robot/import-excel', { method: 'POST', body: envoi })
+            : chemin ? await api('/api/robot/ouvrir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chemin }) })
+            : await api('/api/robot/model' + (demo ? '?demo=true' : ''));
+          if (r.mode === 'indisponible') {
+            vue.modele = null; vue.lot = null;
+            $('rb-calc').disabled = true; $('rb-add').disabled = true; $('rb-xlsx').disabled = true; $('rb-dxf').disabled = true;
+            el.innerHTML = notes(r.notes) + `<p class="small">Pour découvrir Bénayfacile sans Robot, utilisez « Essayer avec l'exemple R+4 ».</p>`;
+            return;
+          }
+          if (!demo && r.nom && !state.project.projet) {   // projet sans titre : reprendre le nom du fichier Robot
+            state.project.projet = r.nom.replace(/\.rtd$/i, '');
+            const f = $('sy-projet'); if (f) f.value = state.project.projet;
+            renderCartouche();
+          }
+          if (demo) {   // l'exemple apporte sa propre identité de projet, clairement marquée
+            Object.assign(state.project, { projet: 'Exemple — immeuble R+4', client: 'Démonstration', site: 'Casablanca', indice: 'A' });
+            for (const k of ['projet', 'client', 'site', 'indice']) { const f = $('sy-' + k); if (f) f.value = state.project[k]; }
+            if (!$('rb-sol').value) $('rb-sol').value = 2;
+            renderCartouche();
+          }
+          vue.modele = r; vue.lot = null;
+          state.robot = r; renderSynthesis();
+          const o = r.ossature;
+          if (!o) { el.innerHTML = `<p class="warn">Le modèle ne contient pas d'ossature lisible.</p>` + notes(r.notes); return; }
+          const source = { robot: 'Robot (lecture COM)', excel: 'Classeur Excel' }[r.mode] || 'Exemple de démonstration R+4';
+          el.innerHTML = kv([
+            ['Source', source], ['Niveaux', o.niveaux.join(', ')],
+            ['Poteaux', o.resume.poteaux, true], ['Poutres', o.resume.poutres, true],
+            ['Semelles', o.resume.semelles, true], ['Voiles', o.resume.voiles, true],
+          ]) + notes(o.remarques) + `<details><summary>Hypothèses ${{ robot: 'de la lecture', excel: "de l'import" }[r.mode] || 'de la simulation'}</summary>${notes(o.hypotheses)}</details>`;
+          $('rb-calc').disabled = false; $('rb-add').disabled = true;
+          const total = o.resume.poteaux + o.resume.poutres + o.resume.semelles + o.resume.voiles;
+          $('rb-res').innerHTML = vide('projet', `${total} éléments prêts. Lancez « Calculer tout le modèle ».`);
+        } catch (e) { afficherErreur(el, e, {}, 'Lecture du modèle impossible. '); }
+      };
+      $('rb-lire').addEventListener('click', () => lire(false));
+      $('rb-demo').addEventListener('click', () => lire(true));
+      $('rb-xlsx-import').addEventListener('click', () => $('rb-xlsx-fichier').click());
+      $('rb-xlsx-fichier').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) lire(false, null, f);
+        e.target.value = '';   // permet de réimporter le même fichier après correction
+      });
+      // Ouvrir un .rtd : boîte de dialogue Windows dans la fenêtre de l'application ;
+      // dans un navigateur (pas d'accès au vrai chemin du fichier), saisie du chemin.
+      $('rb-ouvrir').addEventListener('click', async () => {
+        const natif = window.pywebview && window.pywebview.api && window.pywebview.api.choisir_projet_robot;
+        if (!natif) { $('rb-chemin-zone').hidden = false; $('rb-chemin').focus(); return; }
+        const chemin = await window.pywebview.api.choisir_projet_robot();
+        if (chemin) lire(false, chemin);
+      });
+      const ouvrirChemin = () => {
+        const chemin = $('rb-chemin').value.trim().replace(/^"(.*)"$/, '$1');
+        if (!chemin) { afficherErreur($('rb-modele'), new ErreurApi('', [{ cle: 'chemin', message: 'est obligatoire' }]), { chemin: 'rb-chemin' }); return; }
+        lire(false, chemin);
+      };
+      $('rb-chemin-ok').addEventListener('click', ouvrirChemin);
+      $('rb-chemin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ouvrirChemin(); } });
+
+      $('rb-calc').addEventListener('click', async () => {
+        const o = vue.modele?.ossature; if (!o) return;
+        const resEl = $('rb-res'); spinner(resEl);
+        try {
+          exiger(CH_PROJET, ['sigma_sol_bar']);
+          const payload = { poteaux: o.poteaux, poutres: o.poutres, semelles: o.semelles, voiles: o.voiles,
+            materiaux: { fc28_mpa: +$('rb-fc').value, fe_mpa: +$('rb-fe').value, sigma_sol_bar: +$('rb-sol').value, fissuration: $('rb-fis').value } };
+          vue.compte = false;
+          vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
+          dessiner();
+          $('rb-add').disabled = false; $('rb-xlsx').disabled = false; $('rb-dxf').disabled = false;
+          $('rb-xlsx-res').innerHTML = ''; $('rb-dxf-res').innerHTML = '';
+        } catch (e) { afficherErreur(resEl, e, CH_PROJET); }
+      });
+
+      $('rb-add').addEventListener('click', () => {
+        if (!vue.lot) return;
+        let n = 0;
+        for (const f of FAMILLES) {
+          state[f.synthese] = vue.lot[f.cle].filter(l => l.resultat).map(l => ({
+            ...l.resultat, nom: l.nom, niveau: l.niveau,
+            ...(f.cle === 'poteaux' ? { nu_kn: l.entree.nu_kn, mx_knm: l.entree.mx_knm, my_knm: l.entree.my_knm } : {}),
+            ...(f.cle === 'poutres' ? { mu_knm: l.entree.mu_knm } : {}),
+          }));
+          n += state[f.synthese].length;
+        }
+        state.lot = vue.lot;
+        renderSynthesis();
+        toast(`${n} éléments envoyés à la synthèse.`);
+      });
+
+      $('rb-xlsx').addEventListener('click', async () => {
+        if (!vue.lot) return;
+        const el = $('rb-xlsx-res'); el.innerHTML = '<span class="spinner"></span>Création du classeur…';
+        try {
+          const p = state.project;
+          const r = await api('/api/report/excel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot, bureau: state.bureau }) });
+          const url = '/api/report/excel/' + encodeURIComponent(r.fichier);
+          el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code>.<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+        } catch (e) { afficherErreur(el, e, {}, 'Export impossible. '); }
+      });
+
+      $('rb-dxf').addEventListener('click', async () => {
+        if (!vue.lot) return;
+        const el = $('rb-dxf-res'); el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
+        try {
+          const p = state.project, o = vue.modele?.ossature || {};
+          const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot,
+              trame_x_m: o.trame_x_m || [], trame_y_m: o.trame_y_m || [], bureau: state.bureau }) });
+          const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
+          const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
+          el.innerHTML = `${r.planches.length} planches A1 — ${types} — ${r.elements_dessines} éléments dessinés, `
+            + `${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
+            + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
+            + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+        } catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
+      });
+
+      $('rb-res').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-famille]');
+        if (b) { vue.famille = b.dataset.famille; dessiner(); }
+      });
+      $('rb-res').addEventListener('change', (e) => {
+        if (e.target.id === 'rb-filtre') { vue.aRevoir = e.target.checked; dessiner(); }
+      });
+
+      function dessiner() {
+        const lot = vue.lot, s = lot.resume;
+        const fam = FAMILLES.find(f => f.cle === vue.famille);
+        const lignes = lot[fam.cle].filter(l => !vue.aRevoir || l.statut !== 'verifie');
+        const onglets = FAMILLES.map(f => {
+          const pb = lot[f.cle].filter(l => l.statut !== 'verifie').length;
+          return `<button class="onglet ${f.cle === vue.famille ? 'actif' : ''}" data-famille="${f.cle}">${f.label} <span class="compte">${lot[f.cle].length}</span>${pb ? `<span class="alerte" title="${pb} à revoir">${pb}</span>` : ''}</button>`;
+        }).join('');
+        const tete = `<tr><th>Élément</th>${fam.cols.map(([t, , n]) => `<th class="${n ? 'num' : ''}">${t}</th>`).join('')}<th>État</th></tr>`;
+        const corps = lignes.map(l => `<tr class="st-${l.statut}"><td translate="no"><b>${esc(l.nom)}</b></td>${fam.cols.map(([, f, n]) => `<td class="${n ? 'num' : ''}">${esc(f(l) ?? '—')}</td>`).join('')}
+          <td><span class="etat ${l.statut}">${STATUTS[l.statut]}</span>${(l.problemes || []).map(pb => `<div class="probleme">${esc(pb)}${conseil(pb) ? `<span class="conseil">${esc(conseil(pb))}</span>` : ''}</div>`).join('')}</td></tr>`).join('');
+        $('rb-res').innerHTML = `<div class="bilan">
+            <div><span class="bilan-n">${s.total}</span> éléments</div>
+            <div class="ok"><span class="bilan-n">${s.verifie}</span> vérifiés</div>
+            <div class="${s.a_revoir ? 'ko' : ''}"><span class="bilan-n">${s.a_revoir}</span> à revoir</div>
+            <div class="${s.incomplet + s.erreur ? 'ko' : ''}"><span class="bilan-n">${s.incomplet + s.erreur}</span> incomplets</div>
+          </div>
+          <div class="onglets">${onglets}<label class="filtre"><input type="checkbox" id="rb-filtre" ${vue.aRevoir ? 'checked' : ''}> À revoir seulement</label></div>
+          ${lignes.length ? `<div class="table-defile"><table class="lot">${tete}${corps}</table></div>` : '<p class="small" style="padding:18px 0">Aucun élément à revoir dans cette famille.</p>'}`;
+        if (!vue.compte) { compter($('rb-res')); vue.compte = true; }
+      }
+    }
+  };
+}
+
 /* ============ MODULE: POTEAU ============ */
+const CH_POTEAU = { a_cm: 'p-a', b_cm: 'p-b', lf_m: 'p-lf', nu_kn: 'p-nu', mx_knm: 'p-mx', my_knm: 'p-my', fc28_mpa: 'p-fc', fe_mpa: 'p-fe', cover_mm: 'p-enrobage' };
 function tabPoteau() {
   return {
     html: `<h1 class="module-title">Poteau <small>BAEL 91 rév. 99 — B.8.4,1 compression centrée (Nu,lim = α·[Br·fc28/0,9γb + A·fe/γs]) + flexion composée numérique</small></h1>
 <div class="grid"><div class="card"><h2>Données</h2>
-${row2(field('p-a', "a (cm)", 30), field('p-b', "b (cm)", 30))}
-${row2(field('p-lf', "lf — longueur de flambement (m)", 3.0), field('p-nu', "Nu — effort normal ELU (kN)", 950))}
+${row2(field('p-a', "a (cm)", '', 'number', 'any', 30), field('p-b', "b (cm)", '', 'number', 'any', 30))}
+${row2(field('p-lf', "lf — longueur de flambement (m)", '', 'number', 'any', 3.0), field('p-nu', "Nu — effort normal ELU (kN)", '', 'number', 'any', 950))}
 ${row2(field('p-mx', "Mx (kN.m)", 25), field('p-my', "My (kN.m)", 10))}
 ${row2(field('p-fc', "fc28 (MPa)", 25), field('p-fe', "fe (MPa)", 500))}
 ${field('p-enrobage', "Enrobage (mm)", 30)}
-<button class="btn gold" id="p-calc">Calculer</button>
-<button class="btn ghost small" id="p-add" disabled>Ajouter à la synthèse</button>
+<div class="actions"><button class="btn gold" id="p-calc">Calculer</button>
+<button class="btn ghost small" id="p-add" disabled>Ajouter à la synthèse</button></div>
 </div>
-<div class="card"><h2>Résultat</h2><div class="result" id="p-res"><p class="small">Renseignez les données puis « Calculer ».</p></div></div></div>`,
+<div class="card"><h2>Résultat</h2><div class="result" id="p-res">${vide('poteau')}</div></div></div>`,
     init() {
       $('p-calc').addEventListener('click', async () => {
         const payload = { a_cm: +$('p-a').value, b_cm: +$('p-b').value, lf_m: +$('p-lf').value,
@@ -131,23 +483,25 @@ ${field('p-enrobage', "Enrobage (mm)", 30)}
           fc28_mpa: +$('p-fc').value, fe_mpa: +$('p-fe').value, cover_mm: +$('p-enrobage').value };
         const resEl = $('p-res'); spinner(resEl);
         try {
+          exiger(CH_POTEAU, ['a_cm', 'b_cm', 'lf_m', 'nu_kn']);
           const r = await api('/api/engine/poteau', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const fc = r.flexion_composee || {};
-          resEl.innerHTML = kv([
+          resEl.innerHTML = VERDICTS.poteau(r) + kv([
             ['λ (lf/i)', r.lambda], ['α', r.alpha], ['Nu,lim', r.nu_lim_kn_avec_as_fournie + ' kN'],
-            ['Rapport Nu/Nu,lim', r.nu_rapport], ['As calc.', r.as_calculee_cm2 + ' cm²'],
-            ['Ferraillage', r.ferraillage?.choix], ['MRd (flexion composée)', (fc.moment_capable_knm ?? '—') + ' kN.m'],
+            ['Rapport Nu/Nu,lim', r.nu_rapport, true], ['As calc.', r.as_calculee_cm2 + ' cm²'],
+            ['Ferraillage', r.ferraillage?.choix, true], ['MRd (flexion composée)', (fc.moment_capable_knm ?? '—') + ' kN.m'],
             ['Taux util. moment', fc.taux_utilisation_moment ?? '—'],
           ]) + notes(r.notes) + warns(r.warn ? [r.warn] : []) + renderRaw(r);
           $('p-add').disabled = false;
           $('p-add').onclick = () => addToSynthesis('poteaux', { ...r, nu_kn: payload.nu_kn, mx_knm: payload.mx_knm, my_knm: payload.my_knm });
-        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+        } catch (e) { afficherErreur(resEl, e, CH_POTEAU); }
       });
     }
   };
 }
 
 /* ============ MODULE: SISMIQUE ============ */
+const CH_SISMIQUE = { hauteur_m: 's-h', longueur_contreventement_m: 's-l', g_kn: 's-g', q_kn: 's-q', zone_vitesse: 's-zv', t_manuel_s: 's-tman', amortissement_pct: 's-amort' };
 function tabSismique() {
   const siteOpts = [['S1', 'S1 — Rocher / sol ferme < 30 m (S=1.0)'], ['S2', 'S2 — Sol ferme ≥ 30 m / meuble < 30 m (S=1.2)'],
     ['S3', 'S3 — Sol meuble ≥ 15 m / mou < 10 m (S=1.4)'], ['S4', 'S4 — Sol mou ≥ 10 m (S=1.8)'], ['S5', 'S5 — Conditions spéciales (à justifier)']];
@@ -161,28 +515,29 @@ function tabSismique() {
   return {
     html: `<h1 class="module-title">Vérification Sismique <small>RPS 2000 — version 2011 · approche statique équivalente (F = υ·S·D·I·W/K, eq. 6.1)</small></h1>
 <div class="grid"><div class="card"><h2>Modèle Robot</h2>
-<button class="btn" id="s-robot">Charger le modèle Robot (simulation si Robot absent)</button>
+<button class="btn" id="s-robot">Charger le modèle Robot</button>
 <div class="result" id="s-robot-res" style="margin-top:8px"></div>
-<h2 style="margin-top:14px">Données sismiques</h2>
-${row2(field('s-h', "H — hauteur totale (m)", 15), field('s-l', "L — longueur contreventement (m)", 12))}
-${row2(field('s-g', "G — charges permanentes (kN)", 3800), field('s-q', "Q — charges d'exploitation (kN)", 1200))}
+<h2 class="sous">Données sismiques</h2>
+${row2(field('s-h', "H — hauteur totale (m)", '', 'number', 'any', 15), field('s-l', "L — longueur contreventement (m)", '', 'number', 'any', 12))}
+${row2(field('s-g', "G — charges permanentes (kN)", '', 'number', 'any', 3800), field('s-q', "Q — charges d'exploitation (kN)", '', 'number', 'any', 1200))}
 ${select('s-usage', "Usage (ψ)", usageOpts, 'habitation_admin')}
 ${row2(select('s-zv', "Zone de vitesse υ (Tableau 5.1)", [['0','0 — 0.00 m/s'],['1','1 — 0.07 m/s'],['2','2 — 0.10 m/s'],['3','3 — 0.13 m/s'],['4','4 — 0.17 m/s']], '3'),
        select('s-rapport', "Rapport Za / Zv (Fig. 5.3 vs Fig. 5.2)", [['za_gt_zv','Za > Zv'],['za_eq_zv','Za = Zv'],['za_lt_zv','Za < Zv']], 'za_eq_zv'))}
 ${row2(select('s-site', "Site (Tableau 5.2)", siteOpts, 'S2'), select('s-classe', "Classe (Tableau 3.1)", classeOpts, 'classe_II'))}
 ${row2(select('s-sys', "Système de contreventement (Tableau 3.3)", sysOpts, 'portiques_ba'), select('s-duc', "Ductilité", ducOpts, 'ND1'))}
 ${row2(select('s-tmeth', "Évaluation de T", [['portique','Formule 6.4 — 0.075·H¾'],['acier_noeuds_rigides','Formule 6.5 — 0.085·H¾'],['autre','Formule 6.6 — 0.09·H/√L'],['manuel','T manuelle (Robot)']], 'portique'),
-       field('s-tman', "T manuelle (s) — si « manuelle »", 0.62))}
+       field('s-tman', "T manuelle (s) — si « manuelle »", '', 'number', 'any', 0.62))}
 ${field('s-amort', "Amortissement (%)", 5.0)}
-<button class="btn gold" id="s-calc">Calculer la force sismique</button>
-<button class="btn ghost small" id="s-add" disabled>Ajouter à la synthèse</button>
+<div class="actions"><button class="btn gold" id="s-calc">Calculer la force sismique</button>
+<button class="btn ghost small" id="s-add" disabled>Ajouter à la synthèse</button></div>
 </div>
-<div class="card"><h2>Résultat</h2><div class="result" id="s-res"><p class="small">Chargez le modèle Robot et/ou calculez.</p></div></div></div>`,
+<div class="card"><h2>Résultat</h2><div class="result" id="s-res">${vide('sismique', 'Chargez le modèle Robot ou saisissez les données, puis calculez la force sismique.')}</div></div></div>`,
     init() {
       $('s-robot').addEventListener('click', async () => {
         const el = $('s-robot-res'); el.innerHTML = '<span class="spinner"></span> lecture du modèle…';
         try {
           const r = await api('/api/robot/model');
+          if (r.mode === 'indisponible') { el.innerHTML = notes(r.notes); return; }
           el.innerHTML = kv([
             ['Modèle', r.nom], ['Mode', r.mode], ['Niveaux', r.nb_niveaux],
             ['G (kN)', r.masses?.G_kn], ['Q (kN)', r.masses?.Q_kn], ['W (kN)', r.masses?.W_kn],
@@ -190,7 +545,7 @@ ${field('s-amort', "Amortissement (%)", 5.0)}
           ]) + `<p class="small">${esc((r.notes || []).join(' '))}</p>`;
           if (r.masses) { $('s-g').value = r.masses.G_kn; $('s-q').value = r.masses.Q_kn; }
           state.robot = r; renderSynthesis();
-        } catch (e) { el.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+        } catch (e) { afficherErreur(el, e, {}, 'Lecture du modèle impossible. '); }
       });
       $('s-calc').addEventListener('click', async () => {
         const payload = { hauteur_m: +$('s-h').value, longueur_contreventement_m: +$('s-l').value,
@@ -201,20 +556,22 @@ ${field('s-amort', "Amortissement (%)", 5.0)}
           niveaux: state.robot?.niveaux?.map(n => ({ nom: n.nom, w_kn: n.w_kn, h_m: n.altitude_m })) };
         const resEl = $('s-res'); spinner(resEl);
         try {
+          exiger(CH_SISMIQUE, ['hauteur_m', 'longueur_contreventement_m', 'g_kn', 'q_kn'].concat($('s-tmeth').value === 'manuel' ? ['t_manuel_s'] : []));
           const r = await api('/api/engine/sismique', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          resEl.innerHTML = kv([
+          resEl.innerHTML = VERDICTS.sismique(r) + kv([
             ['υ (m/s)', r.nu_m_s], ['S', r.S], ['I', r.I], ['K', r.K], ['ψ', r.psi], ['W (kN)', r.W_kn],
-            ['T (s)', r.T_s], ['D', r.D], ['F — effort à la base (kN)', r.F_base_kn], ['Ft (kN)', r.Ft_kn], ['ω (modes supérieurs)', r.omega_modes_superieurs],
+            ['T (s)', r.T_s], ['D', r.D], ['F — effort à la base (kN)', r.F_base_kn, true], ['Ft (kN)', r.Ft_kn], ['ω (modes supérieurs)', r.omega_modes_superieurs],
           ]) + notes(r.hypotheses) + (r.Fn?.length ? `<h3>Répartition verticale</h3><table><tr><th>Niveau</th><th>Wi</th><th>hn</th><th>Fn (kN)</th></tr>${r.Fn.map(n => `<tr><td>${esc(n.niveau)}</td><td>${n.Wn_kn}</td><td>${n.hn_m}</td><td>${n.Fn_kn}</td></tr>`).join('')}</table>` : '') + renderRaw(r);
           $('s-add').disabled = false;
-          $('s-add').onclick = () => { state.sismique = r; renderSynthesis(); toast('Vérification sismique ajoutée à la synthèse.'); };
-        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+          $('s-add').onclick = () => { state.sismique = { ...r, donnees: payload }; renderSynthesis(); toast('Vérification sismique ajoutée à la synthèse.'); };
+        } catch (e) { afficherErreur(resEl, e, CH_SISMIQUE); }
       });
     }
   };
 }
 
 /* ============ MODULE: SEMELLES ============ */
+const chSemelle = (p) => ({ ns_kn: `${p}-ns`, nu_kn: `${p}-nu`, a_poteau_cm: `${p}-a`, b_poteau_cm: `${p}-b`, sigma_sol_bar: `${p}-sig`, fc28_mpa: `${p}-fc`, cover_mm: `${p}-enrobage`, Mx_knm: `${p}-mx`, My_knm: `${p}-my` });
 function tabSemelle(filante) {
   const p = filante ? 'sf' : 'si';
   const title = filante ? 'Semelles Filantes' : 'Semelles Isolées';
@@ -222,15 +579,15 @@ function tabSemelle(filante) {
   return {
     html: `<h1 class="module-title">${esc(title)} <small>BAEL/BE — ${esc(normes)}</small></h1>
 <div class="grid"><div class="card"><h2>Données</h2>
-${row2(field(`${p}-ns`, "Ns — effort service (kN)", 950), field(`${p}-nu`, "Nu — ELU (optionnel, défaut 1.5·Ns) (kN)", ''))}
-${row2(field(`${p}-a`, "Poteau/voile a (cm)", 30), field(`${p}-b`, "Poteau/voile b (cm)", 30))}
-${row2(field(`${p}-sig`, "σsol admissible (bar)", 2.0), field(`${p}-fc`, "fc28 (MPa)", 25))}
+${row2(field(`${p}-ns`, "Ns — effort service (kN)", '', 'number', 'any', 950), field(`${p}-nu`, "Nu — ELU (optionnel, défaut 1.5·Ns) (kN)", ''))}
+${row2(field(`${p}-a`, "Poteau/voile a (cm)", '', 'number', 'any', 30), field(`${p}-b`, "Poteau/voile b (cm)", '', 'number', 'any', 30))}
+${row2(field(`${p}-sig`, "σsol admissible (bar)", '', 'number', 'any', 2.0), field(`${p}-fc`, "fc28 (MPa)", 25))}
 ${filante ? '' : row2(field(`${p}-mx`, "Mx (kN.m)", 0), field(`${p}-my`, "My (kN.m)", 0))}
 ${field(`${p}-enrobage`, "Enrobage (mm)", 50)}
-<button class="btn gold" id="${p}-calc">Calculer</button>
-<button class="btn ghost small" id="${p}-add" disabled>Ajouter à la synthèse</button>
+<div class="actions"><button class="btn gold" id="${p}-calc">Calculer</button>
+<button class="btn ghost small" id="${p}-add" disabled>Ajouter à la synthèse</button></div>
 </div>
-<div class="card"><h2>Résultat</h2><div class="result" id="${p}-res"><p class="small">Renseignez les données puis « Calculer ».</p></div></div></div>`,
+<div class="card"><h2>Résultat</h2><div class="result" id="${p}-res">${vide(filante ? 'semelle_filante' : 'semelle')}</div></div></div>`,
     init() {
       $(`${p}-calc`).addEventListener('click', async () => {
         const nuRaw = $(`${p}-nu`).value;
@@ -240,37 +597,39 @@ ${field(`${p}-enrobage`, "Enrobage (mm)", 50)}
         if (!filante) { payload.Mx_knm = +$(`${p}-mx`).value; payload.My_knm = +$(`${p}-my`).value; }
         const resEl = $(`${p}-res`); spinner(resEl);
         try {
+          exiger(chSemelle(p), ['ns_kn', 'a_poteau_cm', 'b_poteau_cm', 'sigma_sol_bar']);
           const url = filante ? '/api/engine/semelle_filante' : '/api/engine/semelle';
           const r = await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          resEl.innerHTML = kv([
-            ['A (m)', r.A_m], ['B (m)', r.B_m], ['H (m)', r.H_m], ['d (m)', r.d_m],
+          resEl.innerHTML = VERDICTS.semelle(r) + kv([
+            ['A (m)', r.A_m, true], ['B (m)', r.B_m, true], ['H (m)', r.H_m], ['d (m)', r.d_m],
             ['Poids (T)', r.poids_T], ['σmax (bar)', r.sigma_max_bar], ['σmin (bar)', r.sigma_min_bar],
             ['Asx (cm²)', r.asx_cm2], ['Asy (cm²)', r.asy_cm2], ['Acier X', r.acier_x], ['Acier Y', r.acier_y],
-            ['Poinçonnement', r.poinconnement.ok ? 'OK' : 'NON VÉRIFIÉ'],
+            ['Poinçonnement', r.poinconnement.ok ? 'OK' : 'NON VÉRIFIÉ', true],
           ]) + (filante ? kv([['As par mètre linéaire', r.as_cm2_par_ml + ' cm²/ml']]) : '') +
             warns(r.avertissements) + renderRaw(r);
           $(`${p}-add`).disabled = false;
           $(`${p}-add`).onclick = () => addToSynthesis(filante ? 'semelles_filantes' : 'semelles_isolees', { ...r });
-        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+        } catch (e) { afficherErreur(resEl, e, chSemelle(p)); }
       });
     }
   };
 }
 
 /* ============ MODULE: POUTRE ============ */
+const CH_POUTRE = { b_cm: 'pt-b', h_cm: 'pt-h', enrobage_mm: 'pt-enrobage', fc28_mpa: 'pt-fc', fe_mpa: 'pt-fe', mu_knm: 'pt-mu', vu_kn: 'pt-vu', ms_knm: 'pt-ms' };
 function tabPoutre() {
   return {
     html: `<h1 class="module-title">Poutre <small>BAEL 91 rév. 99 — flexion simple ELU (diagramme rectangulaire 0,8 yu) + ELS (n=15) + effort tranchant</small></h1>
 <div class="grid"><div class="card"><h2>Données</h2>
-${row2(field('pt-b', "b (cm)", 25), field('pt-h', "h (cm)", 50))}
-${row2(field('pt-mu', "Mu (kN.m)", 120), field('pt-vu', "Vu (kN)", 90))}
+${row2(field('pt-b', "b (cm)", '', 'number', 'any', 25), field('pt-h', "h (cm)", '', 'number', 'any', 50))}
+${row2(field('pt-mu', "Mu (kN.m)", '', 'number', 'any', 120), field('pt-vu', "Vu (kN)", '', 'number', 'any', 90))}
 ${row2(field('pt-fc', "fc28 (MPa)", 25), field('pt-fe', "fe (MPa)", 500))}
 ${row2(field('pt-enrobage', "Enrobage (mm)", 40), field('pt-ms', "Ms service (optionnel) (kN.m)", ''))}
 ${select('pt-fis', "Fissuration", [['peu_prejudiciable', 'Peu préjudiciable (σst ≤ 2/3 fe)'], ['prejudiciable', 'Préjudiciable (A.4.5,33)'], ['tres_prejudiciable', 'Très préjudiciable (A.4.5,34)']], 'prejudiciable')}
-<button class="btn gold" id="pt-calc">Calculer</button>
-<button class="btn ghost small" id="pt-add" disabled>Ajouter à la synthèse</button>
+<div class="actions"><button class="btn gold" id="pt-calc">Calculer</button>
+<button class="btn ghost small" id="pt-add" disabled>Ajouter à la synthèse</button></div>
 </div>
-<div class="card"><h2>Résultat</h2><div class="result" id="pt-res"><p class="small">Renseignez les données puis « Calculer ».</p></div></div></div>`,
+<div class="card"><h2>Résultat</h2><div class="result" id="pt-res">${vide('poutre')}</div></div></div>`,
     init() {
       $('pt-calc').addEventListener('click', async () => {
         const ms = $('pt-ms').value;
@@ -280,49 +639,52 @@ ${select('pt-fis', "Fissuration", [['peu_prejudiciable', 'Peu préjudiciable (σ
         if (ms !== '') payload.ms_knm = +ms;
         const resEl = $('pt-res'); spinner(resEl);
         try {
+          exiger(CH_POUTRE, ['b_cm', 'h_cm', 'mu_knm']);
           const r = await api('/api/engine/poutre', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const els = r.els || {}, tau = r.effort_tranchant || {};
-          resEl.innerHTML = kv([
+          resEl.innerHTML = VERDICTS.poutre(r) + kv([
             ['μ', r.mu], ['μlim', r.mu_lim], ['α', r.alpha], ['Z (m)', r.z_m],
             ['As calc. (cm²)', r.as_cm2], ['As retenue (cm²)', r.as_retenue_cm2],
-            ['Ferraillage', r.ferraillage?.choix], ['σbc ELS (MPa)', els.sigma_bc_mpa], ['σst ELS (MPa)', `${els.sigma_st_mpa} / lim ${els.sigma_st_lim_mpa}`],
+            ['Ferraillage', r.ferraillage?.choix, true], ['σbc ELS (MPa)', els.sigma_bc_mpa], ['σst ELS (MPa)', `${els.sigma_st_mpa} / lim ${els.sigma_st_lim_mpa}`],
             ['σst OK ?', els.sigma_st_ok ? 'OUI' : 'NON'], ['τu (MPa)', `${tau.tau_u_mpa} / lim ${tau.tau_u_lim_mpa}`], ['At (cm²/m)', tau.at_cm2_par_m],
           ]) + renderRaw(r);
           $('pt-add').disabled = false;
-          $('pt-add').onclick = () => addToSynthesis('poutres', { ...r });
-        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+          $('pt-add').onclick = () => addToSynthesis('poutres', { ...r, mu_knm: payload.mu_knm });
+        } catch (e) { afficherErreur(resEl, e, CH_POUTRE); }
       });
     }
   };
 }
 
 /* ============ MODULE: VOILE ============ */
+const CH_VOILE = { longueur_m: 'v-l', ep_cm: 'v-ep', fc28_mpa: 'v-fc', n_kn: 'v-n', m_knm: 'v-m', v_kn: 'v-v' };
 function tabVoile() {
   return {
     html: `<h1 class="module-title">Voiles de Contreventement <small>BAEL B.8.4 / pratique BET — σ = N/(e·L) ± 6M/(e·L²) ; rive dimensionnée si section partiellement comprimée</small></h1>
 <div class="grid"><div class="card"><h2>Données</h2>
-${row2(field('v-l', "L — longueur du voile (m)", 4.0), field('v-ep', "ép. (cm)", 18))}
-${row2(field('v-n', "N — effort normal ELU (kN)", 1200), field('v-m', "M (kN.m)", 260))}
-${row2(field('v-v', "V — effort tranchant ELU (kN)", 180), field('v-fc', "fc28 (MPa)", 25))}
-<button class="btn gold" id="v-calc">Calculer</button>
-<button class="btn ghost small" id="v-add" disabled>Ajouter à la synthèse</button>
+${row2(field('v-l', "L — longueur du voile (m)", '', 'number', 'any', 4.0), field('v-ep', "ép. (cm)", '', 'number', 'any', 18))}
+${row2(field('v-n', "N — effort normal ELU (kN)", '', 'number', 'any', 1200), field('v-m', "M (kN.m)", '', 'number', 'any', 260))}
+${row2(field('v-v', "V — effort tranchant ELU (kN)", '', 'number', 'any', 180), field('v-fc', "fc28 (MPa)", 25))}
+<div class="actions"><button class="btn gold" id="v-calc">Calculer</button>
+<button class="btn ghost small" id="v-add" disabled>Ajouter à la synthèse</button></div>
 </div>
-<div class="card"><h2>Résultat</h2><div class="result" id="v-res"><p class="small">Renseignez les données puis « Calculer ».</p></div></div></div>`,
+<div class="card"><h2>Résultat</h2><div class="result" id="v-res">${vide('voile')}</div></div></div>`,
     init() {
       $('v-calc').addEventListener('click', async () => {
         const payload = { longueur_m: +$('v-l').value, ep_cm: +$('v-ep').value, fc28_mpa: +$('v-fc').value, fe_mpa: 500,
           n_kn: +$('v-n').value, m_knm: +$('v-m').value, v_kn: +$('v-v').value };
         const resEl = $('v-res'); spinner(resEl);
         try {
+          exiger(CH_VOILE, ['longueur_m', 'ep_cm', 'n_kn']);
           const r = await api('/api/engine/voile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          resEl.innerHTML = kv([
-            ['Mode', r.mode], ['σmax (MPa)', r.sigma_max_mpa], ['σmin (MPa)', r.sigma_min_mpa],
+          resEl.innerHTML = VERDICTS.voile(r) + kv([
+            ['Mode', r.mode], ['σmax (MPa)', r.sigma_max_mpa, true], ['σmin (MPa)', r.sigma_min_mpa],
             ['Compression OK ?', r.compression_ok ? 'OUI' : 'NON'], ['τu (MPa)', `${r.tau_u_mpa} / lim ${r.tau_u_lim_mpa}`],
             ['As rive (cm²)', r.as_rive_cm2], ['As vert. min (cm²/m)', r.as_vert_par_m_cm2], ['As horiz. min (cm²/m)', r.as_horiz_par_m_cm2],
           ]) + notes(r.attention) + renderRaw(r);
           $('v-add').disabled = false;
           $('v-add').onclick = () => addToSynthesis('voiles', { ...r });
-        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+        } catch (e) { afficherErreur(resEl, e, CH_VOILE); }
       });
     }
   };
@@ -333,26 +695,30 @@ function tabSynthese() {
   return {
     html: `<h1 class="module-title">Synthèse de Calcul <small>Note de calcul HTML (page de garde, références BAEL/RPS, calculs, audit arithmétique) + plan DXF A3</small></h1>
 <div class="grid"><div class="card"><h2>Projet</h2>
-${field('sy-projet', "Projet", state.project.projet, 'text')}
-${row2(field('sy-client', "Client", state.project.client, 'text'), field('sy-site', "Site", state.project.site, 'text'))}
-${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="field"><label>&nbsp;</label><button class="btn small ghost" id="sy-loaddemo">Charger le scénario démo R+4</button></div>`)}
-<h2 style="margin-top:14px">Éléments collectés</h2>
+${field('sy-projet', "Projet", state.project.projet, 'text', 'any', 'Résidence Al Amal, R+3')}
+${row2(field('sy-client', "Client", state.project.client, 'text', 'any', "Maître d'ouvrage"), field('sy-site', "Site", state.project.site, 'text', 'any', 'Ville, quartier'))}
+${field('sy-objet', "Objet", state.project.objet, 'text', 'any', "Construction d'un immeuble R+3 à usage d'habitation")}
+${row2(field('sy-architecte', "Architecte", state.project.architecte, 'text'), field('sy-controle', "Bureau de contrôle", state.project.controle, 'text'))}
+${row2(field('sy-laboratoire', "Laboratoire (étude géotechnique)", state.project.laboratoire, 'text'), select('sy-phase', "Phase", [['Esquisse', 'Esquisse'], ['APS', 'APS'], ['APD', 'APD'], ['Autorisation de construire', 'Autorisation de construire'], ['DCE', 'DCE'], ['Exécution', 'Exécution']], state.project.phase))}
+${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="field"><label>&nbsp;</label><button class="btn small ghost" id="sy-loaddemo">Charger l'exemple R+4</button></div>`)}
+<h2 class="sous">Éléments collectés</h2>
 <ul class="items-list" id="synthesis-items"></ul>
-<div style="margin-top:14px; display:flex; flex-direction:column; gap:10px">
-  <button class="btn gold" id="sy-note">Générer la note de calcul (nouvel onglet)</button>
+<div class="actions-col">
+  <button class="btn gold" id="sy-note">Générer la note de calcul</button>
   <button class="btn" id="sy-note-save">Sauvegarder la note (serveur /output)</button>
   <button class="btn" id="sy-dxf">Générer le plan DXF (semelles)</button>
   <a class="btn ghost small" id="sy-dxf-link" style="display:none; text-align:center">Télécharger le DXF</a>
 </div>
 </div>
-<div class="card"><h2>Aperçu</h2><div class="result" id="sy-log"><p class="small">La synthèse assemble automatiquement : page de garde, références normatives, hypothèses,
-modèle Robot, vérification sismique, poteaux, poutres, semelles, voiles, audit arithmétique ligne à ligne et alertes.</p></div></div></div>`,
+<div class="card"><h2>Aperçu</h2><div class="result" id="sy-log">${vide('synthese', 'La note suit la présentation d’un bureau d’études : page de garde et intervenants, règlements, hypothèses, étude sismique, ferraillage par type avec un exemple de calcul détaillé, quantités, conclusion et réserves.')}</div></div></div>`,
     init() {
       // synchroniser les champs projet
-      $('sy-projet').addEventListener('input', e => state.project.projet = e.target.value);
-      $('sy-client').addEventListener('input', e => state.project.client = e.target.value);
+      $('sy-projet').addEventListener('input', e => { state.project.projet = e.target.value; renderCartouche(); });
+      $('sy-client').addEventListener('input', e => { state.project.client = e.target.value; renderCartouche(); });
       $('sy-site').addEventListener('input', e => state.project.site = e.target.value);
-      $('sy-indice').addEventListener('input', e => state.project.indice = e.target.value);
+      $('sy-indice').addEventListener('input', e => { state.project.indice = e.target.value; renderCartouche(); });
+      for (const k of ['objet', 'architecte', 'controle', 'laboratoire']) $('sy-' + k).addEventListener('input', e => { state.project[k] = e.target.value; });
+      $('sy-phase').addEventListener('change', e => { state.project.phase = e.target.value; });
       $('sy-loaddemo').addEventListener('click', loadDemo);
       renderSynthesis();
       const log = (msg) => { $('sy-log').innerHTML = `<p class="note">${esc(msg)}</p>`; };
@@ -362,9 +728,8 @@ modèle Robot, vérification sismique, poteaux, poutres, semelles, voiles, audit
           const payload = synthesisPayload();
           const r = await fetch('/api/report/note', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const html = await r.text();
-          const w = window.open('', '_blank');
-          w.document.open(); w.document.write(html); w.document.close();
-          log('Note de calcul ouverte dans un nouvel onglet (imprimez-la en PDF depuis le navigateur).');
+          ouvrirApercuNote(html);
+          log('Note de calcul affichée. Bouton « Imprimer / PDF » pour l\'enregistrer en PDF.');
         } catch (e) { log('Erreur : ' + e.message); }
       });
       $('sy-note-save').addEventListener('click', async () => {
@@ -412,7 +777,7 @@ ${row2(field('b-patente', "Patente", b.patente || '', 'text'), field('b-if', "IF
 <button class="btn gold" id="b-save">Enregistrer</button>
 <p class="note">Ces données sont enregistrées dans <code>referentiels/bureau.json</code>. Les champs « logo » et « cachet » peuvent être ajoutés au format base64 (clés logo_base64 / cachet_base64).</p>
 </div>
-<div class="card"><h2>Aperçu</h2><div class="result" id="b-res"><p class="small">Modifiez les valeurs puis « Enregistrer ».</p></div></div></div>`,
+<div class="card"><h2>Aperçu</h2><div class="result" id="b-res">${vide('bureau', 'Modifiez les valeurs puis enregistrez.')}</div></div></div>`,
     init() {
       $('b-save').addEventListener('click', async () => {
         const payload = { nom: $('b-nom').value, adresse: $('b-adresse').value, telephone: $('b-tel').value,
@@ -423,7 +788,7 @@ ${row2(field('b-patente', "Patente", b.patente || '', 'text'), field('b-if', "IF
           await api('/api/bureau', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           state.bureau = { ...state.bureau, ...payload };
           resEl.innerHTML = '<p class="ok">Données enregistrées. Elles apparaîtront dans la prochaine note de calcul et le prochain plan DXF.</p>';
-        } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
+        } catch (e) { afficherErreur(resEl, e, {}, 'Enregistrement impossible. '); }
       });
     }
   };
@@ -434,47 +799,145 @@ async function loadDemo() {
   const resEl = $('sy-log'); resEl.innerHTML = '<span class="spinner"></span> chargement du scénario démo…';
   try {
     const demo = await api('/api/demo');
-    state.project = { projet: demo.projet, client: demo.client, site: demo.site, indice: 'A' };
-    const robot = await api('/api/robot/model');
+    state.project = { projet: 'Exemple — immeuble R+4', client: 'Démonstration', site: demo.site, indice: 'A' };
+    const robot = await api('/api/robot/model?demo=true');
     state.robot = robot;
     const sisPayload = { ...demo.sismique };
     const rSism = await api('/api/engine/sismique', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sisPayload) });
-    state.sismique = rSism;
+    state.sismique = { ...rSism, donnees: sisPayload };
     state.poteaux = []; state.poutres = []; state.semelles_isolees = []; state.semelles_filantes = []; state.voiles = [];
     for (const p of demo.poteaux) state.poteaux.push(await api('/api/engine/poteau', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
     for (const p of demo.poutres) state.poutres.push(await api('/api/engine/poutre', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
     for (const p of demo.semelles_isolees) state.semelles_isolees.push(await api('/api/engine/semelle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
     for (const p of demo.voiles) state.voiles.push(await api('/api/engine/voile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
-    renderSynthesis();
+    renderSynthesis(); renderCartouche();
+    for (const k of ['projet', 'client', 'site', 'indice']) { const f = $('sy-' + k); if (f) f.value = state.project[k]; }
     resEl.innerHTML = '<p class="ok">Scénario démo chargé : Robot (simulation) + sismique + 1 poteau + 1 poutre + 1 semelle + 1 voile. Générez la note ou le DXF.</p>';
-  } catch (e) { resEl.innerHTML = `<p class="warn">Erreur démo : ${esc(e.message)}</p>`; }
+  } catch (e) { afficherErreur(resEl, e, {}, 'Chargement de la démo impossible. '); }
 }
 
 /* ---------- construction des onglets ---------- */
-const builders = { poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
+const builders = { projet: tabProjet, poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
   semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile,
   synthese: tabSynthese, bureau: tabBureau };
+
+/* Les totaux montent de 0 à leur valeur quand les résultats arrivent (sauf « animations réduites »). */
+function compter(racine) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  racine.querySelectorAll('.bilan-n').forEach(el => {
+    const fin = +el.textContent; if (!fin) return;
+    const t0 = performance.now(), duree = 700;
+    const pas = (t) => {
+      const p = Math.min(1, (t - t0) / duree), e = 1 - (1 - p) ** 3;
+      el.textContent = String(Math.round(fin * e));
+      if (p < 1) requestAnimationFrame(pas);
+    };
+    el.textContent = '0'; requestAnimationFrame(pas);
+  });
+}
+
+/* ---------- préférences d'affichage (mémorisées sur ce poste) ---------- */
+const PREFS_DEFAUT = { style: 'stade', theme: 'auto', taille: '1', niveau: 'guide', langue: 'fr' };
+function lirePrefs() {
+  try { return { ...PREFS_DEFAUT, ...JSON.parse(localStorage.getItem('benayfacile.prefs') || '{}') }; }
+  catch { return { ...PREFS_DEFAUT }; }
+}
+function ecrirePrefs(p) { try { localStorage.setItem('benayfacile.prefs', JSON.stringify(p)); } catch { /* stockage indisponible */ } }
+const prefs = lirePrefs();
+function appliquerPrefs() {
+  const r = document.documentElement;
+  r.dataset.style = prefs.style === 'plan' ? 'plan' : 'stade';
+  r.dataset.niveau = prefs.niveau === 'expert' ? 'expert' : 'guide';
+  definirLangue(prefs.langue);
+  if (prefs.theme === 'auto') r.removeAttribute('data-theme');
+  else r.dataset.theme = prefs.theme === 'sombre' ? 'dark' : 'light';
+  r.style.setProperty('--zoom', prefs.taille);
+  document.querySelectorAll('.segments[data-pref]').forEach(g => {
+    g.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.val === String(prefs[g.dataset.pref]))));
+  });
+  document.dispatchEvent(new CustomEvent('prefs'));
+}
+function brancherReglages() {
+  document.querySelectorAll('.segments[data-pref]').forEach(g => g.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-val]'); if (!b) return;
+    prefs[g.dataset.pref] = b.dataset.val;
+    ecrirePrefs(prefs); appliquerPrefs();
+  }));
+  appliquerPrefs();
+}
+brancherReglages();
 
 async function boot() {
   try { state.bureau = await api('/api/bureau'); } catch { state.bureau = {}; }
   const nav = $('tabs'), main = $('main');
+  let groupe = null;
   for (const m of MODULES) {
+    if (m.groupe !== groupe) {
+      groupe = m.groupe;
+      const g = document.createElement('div');
+      g.className = 'nav-groupe'; g.textContent = groupe;
+      nav.appendChild(g);
+    }
     const b = document.createElement('button');
-    b.textContent = m.label; b.dataset.tab = m.id;
+    b.innerHTML = `${glyphe(m.id)}<span>${esc(m.label)}</span>`; b.dataset.tab = m.id;
     b.addEventListener('click', () => activate(m.id));
     nav.appendChild(b);
     const section = document.createElement('section');
     section.className = 'tab'; section.id = 'tab-' + m.id;
     const built = builders[m.id]();
     section.innerHTML = built.html;
+    const feuille = section.querySelector('.grid > .card:last-child > h2:first-child');
+    if (feuille) feuille.dataset.feuille = m.ref;
     main.appendChild(section);
     built.init();
   }
+  renderCartouche();
+  // les zones de résultat annoncent leur contenu aux lecteurs d'écran
+  main.querySelectorAll('.result').forEach(r => r.setAttribute('aria-live', 'polite'));
   function activate(id) {
-    nav.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+    nav.querySelectorAll('button').forEach(b => {
+      const actif = b.dataset.tab === id;
+      b.classList.toggle('active', actif);
+      if (actif) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    main.scrollTop = 0; window.scrollTo(0, 0);
     main.querySelectorAll('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + id));
   }
-  activate('poteau');
+  activate('projet');
+  // Entrée dans un champ : lance l'action principale de l'onglet ; Alt+1…9 : changer de module
+  main.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target.matches('input[type="number"], input[type="text"]')) return;
+    const bouton = e.target.closest('.card')?.querySelector('.btn.gold:not(:disabled)');
+    if (bouton) { e.preventDefault(); bouton.click(); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key)) return;
+    const m = MODULES[+e.key - 1];
+    if (m) { e.preventDefault(); activate(m.id); nav.querySelector(`[data-tab="${m.id}"]`)?.focus(); }
+  });
   checkHealth();
 }
 boot();
+
+
+// Aperçu intégré de la note de calcul : fonctionne dans la fenêtre de l'application
+// (WebView2) comme dans un navigateur, sans ouvrir de nouvel onglet ni de fenêtre.
+function ouvrirApercuNote(html) {
+  let ov = document.getElementById('apercu-note');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'apercu-note';
+    ov.innerHTML = `<div class="apercu-barre"><strong>Note de calcul</strong>
+      <span><button class="btn gold small" id="apercu-imprimer">Imprimer / PDF</button>
+      <button class="btn ghost small" id="apercu-fermer">Fermer</button></span></div>
+      <iframe id="apercu-cadre" title="Note de calcul"></iframe>`;
+    document.body.appendChild(ov);
+    document.getElementById('apercu-fermer').addEventListener('click', () => { ov.style.display = 'none'; });
+    document.getElementById('apercu-imprimer').addEventListener('click', () => {
+      const f = document.getElementById('apercu-cadre'); f.contentWindow.focus(); f.contentWindow.print();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') ov.style.display = 'none'; });
+  }
+  document.getElementById('apercu-cadre').srcdoc = html;
+  ov.style.display = 'flex';
+}

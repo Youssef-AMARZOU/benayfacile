@@ -17,7 +17,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -98,7 +98,9 @@ def _resolve_y(b_cm: float, d_m: float, as_cm2: float, asc_cm2: float = 0.0,
     Asc = asc_cm2 / 1e4
 
     def eq(y):
-        return bc * y**2 / 2 + n * As * (d_m - y) - n * Asc * (y - dprime_m)
+        # moment statique de la section homogénéisée par rapport à l'axe neutre = 0 :
+        # béton comprimé + aciers comprimés − aciers tendus (n = 15)
+        return bc * y**2 / 2 + n * Asc * (y - dprime_m) - n * As * (d_m - y)
     lo, hi = 1e-6, d_m
     flo, fhi = eq(lo), eq(hi)
     tries = 0
@@ -149,12 +151,12 @@ def flex_els(b_cm: float, d_m: float, as_cm2: float, fc28: float, fe: float,
         sig_lim = min(2 / 3 * fe, max(0.5 * fe, 110 * math.sqrt(eta * ft)))
     else:  # tres_prejudiciable
         sig_lim = 0.8 * min(2 / 3 * fe, max(0.5 * fe, 110 * math.sqrt(eta * ft)))
-    return {
-        "axe_neutre_y_m": round(y, 4), "inertie_I_m4": f"{I:.3e}",
-        "sigma_bc_mpa": round(sigma_bc, 2), "sigma_bc_lim_mpa": 0.6 * fc28,
-        "sigma_bc_ok": sigma_bc <= 0.6 * fc28,
-        "sigma_st_mpa": round(sigma_st, 1), "sigma_st_lim_mpa": round(sig_lim, 1),
-        "sigma_st_ok": sigma_st <= sig_lim,
+    return {   # types Python natifs (et non numpy) : la réponse doit être sérialisable en JSON
+        "axe_neutre_y_m": round(float(y), 4), "inertie_I_m4": f"{float(I):.3e}",
+        "sigma_bc_mpa": round(float(sigma_bc), 2), "sigma_bc_lim_mpa": 0.6 * fc28,
+        "sigma_bc_ok": bool(sigma_bc <= 0.6 * fc28),
+        "sigma_st_mpa": round(float(sigma_st), 1), "sigma_st_lim_mpa": round(sig_lim, 1),
+        "sigma_st_ok": bool(sigma_st <= sig_lim),
         "fissuration": fissuration,
     }
 
@@ -241,6 +243,9 @@ def poteau_b84(a_cm: float, b_cm: float, lf_m: float, fc28: float, fe: float,
         "ferraillage": choix, "notes": note,
         "nu_lim_kn_avec_as_fournie": round(nu_lim, 1),
         "nu_kn": nu_kn, "nu_rapport": round(nu_kn / nu_lim, 3) if nu_lim > 0 else None,
+        "section_suffisante": as_calc <= as_max,
+        "warn": (f"As = {as_calc:.1f} cm² > 5 % B = {as_max:.1f} cm² (BAEL A.8.1,22) : "
+                 "section de béton insuffisante, augmenter a × b.") if as_calc > as_max else None,
     }
 
 
@@ -304,12 +309,21 @@ def poteau_moment_capacity(a_cm: float, h_cm: float, as_fournie_cm2: float, fc28
         # pas de racine : prendre x minimisant l'écart
         x_star = min(xs, key=lambda xx: abs(forces(xx)[0] - nu_n))
     nf, m = forces(x_star)
-    m_cap_knm = abs(m) / 1000.0
-    ratio = abs(moment_knm) / m_cap_knm if m_cap_knm > 0 else None
-    return {"x_axe_neutre_m": round(x_star, 4), "moment_capable_knm": round(m_cap_knm, 2),
+    # équilibre atteint ? (sinon la section ne reprend même pas Nu : pas de moment capable)
+    equilibre = abs(nf - nu_n) <= 0.02 * max(nu_n, 1.0)
+    m_cap_knm = float(abs(m)) / 1000.0 if equilibre else 0.0
+    if m_cap_knm < 0.01:
+        m_cap_knm = 0.0
+    if m_cap_knm > 0:
+        ratio = abs(moment_knm) / m_cap_knm
+    else:
+        ratio = None
+    return {"x_axe_neutre_m": round(float(x_star), 4), "moment_capable_knm": round(m_cap_knm, 2),
             "moment_applique_knm": round(abs(moment_knm), 2),
             "taux_utilisation_moment": round(ratio, 3) if ratio is not None else None,
-            "n_verification_kn": round(nf / 1000.0, 1),
+            "capacite_insuffisante": bool(m_cap_knm == 0.0 and (not equilibre or abs(moment_knm) > 0)),
+            "equilibre_atteint": bool(equilibre),
+            "n_verification_kn": round(float(nf) / 1000.0, 1),
             "hypotheses": "diagramme rectangulaire 0,8 y, acier symétrique nappe tête/pieds, εc = 3,5 ‰ (pivot B) ; si section entièrement comprimée résultat à justifier par A.4.4 / E.7."}
 
 
@@ -428,6 +442,48 @@ def poteau(inp: PoteauInput):
     res["flexion_composee"] = moment
     return res
 
+def choisir_barres_poutre(as_requis_cm2: float, b_cm: float, enrobage_mm: float = 40.0, cadre_mm: float = 8.0) -> dict:
+    """Aciers longitudinaux d'une poutre, constructibles sur chantier.
+
+    Règles retenues (BAEL A.7.2 et pratique BET) :
+      - au moins 2 barres ; Ø de 10 à 25 mm (32 mm seulement si b > 30 cm) ;
+      - espacement libre entre barres ≥ max(Ø, 25 mm) ; au plus 2 lits ;
+      - on évite plus de 25 % d'acier en excès, puis on préfère un seul lit, l'excès le plus faible
+        et le moins de barres.
+    """
+    import math
+    as_requis_cm2 = max(as_requis_cm2, 0.01)
+    largeur_utile = b_cm * 10 - 2 * (enrobage_mm + cadre_mm)          # mm
+    diametres = [10, 12, 14, 16, 20, 25] + ([32] if b_cm > 30 else [])
+    meilleur = None
+    for d in diametres:
+        n = max(2, math.ceil(as_requis_cm2 / section_bar(d)))
+        e = max(d, 25)
+        par_lit = max(int((largeur_utile + e) // (d + e)), 0)
+        if par_lit < 2:
+            continue
+        lits = math.ceil(n / par_lit)
+        if lits > 2:
+            continue
+        fournie = round(n * section_bar(d), 2)
+        exces = 100.0 * (fournie - as_requis_cm2) / as_requis_cm2
+        tranche = 0 if exces <= 10 else (1 if exces <= 25 else 2)
+        # un seul lit d'abord (plus simple à poser, bras de levier conservé), sauf excès d'acier > 25 %
+        cle = (tranche == 2, lits, tranche, n, -d)
+        if meilleur is None or cle < meilleur[0]:
+            meilleur = (cle, {"n": n, "diametre_mm": d, "as_fournie_cm2": fournie, "lits": lits,
+                              "ecart_cm2": round(fournie - as_requis_cm2, 2), "surdimensionnement_pct": round(exces, 1)})
+    if meilleur is None:   # section trop étroite pour loger l'acier : on le signale au lieu de tricher
+        d = 25
+        n = max(2, math.ceil(as_requis_cm2 / section_bar(d)))
+        c = {"n": n, "diametre_mm": d, "as_fournie_cm2": round(n * section_bar(d), 2), "lits": 3,
+             "ecart_cm2": None, "surdimensionnement_pct": None, "inconstructible": True}
+    else:
+        c = meilleur[1]
+    c["choix"] = f"{c['n']} HA{c['diametre_mm']}" + (f" ({c['lits']} lits)" if c.get("lits", 1) > 1 else "")
+    return c
+
+
 @app.post("/poutre")
 def poutre(inp: PoutreInput):
     h_m = inp.h_cm / 100.0
@@ -436,17 +492,27 @@ def poutre(inp: PoutreInput):
     # non-fragilité
     as_nf = non_fragilite(inp.b_cm, d_m, inp.fc28_mpa, inp.fe_mpa)
     as_final = max(res["as_cm2"], as_nf)
-    choix = choisir_barres(as_final, d_max_mm=32, n_max=8)
+    choix = choisir_barres_poutre(as_final, inp.b_cm, inp.enrobage_mm)
+    # ELS (BAEL A.4.5) : en fissuration préjudiciable ou très préjudiciable, l'ELS gouverne
+    # souvent ; As est augmenté jusqu'à σst ≤ σst,lim (et σbc ≤ 0,6 fc28 vérifié).
+    ms = inp.ms_knm if inp.ms_knm else inp.mu_knm / 1.5
+    els = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa, ms, inp.fissuration)
+    as_elu = as_final
+    pas = 0
+    while not els.get("sigma_st_ok", True) and pas < 60:
+        as_final = choix["as_fournie_cm2"] + 0.25
+        choix = choisir_barres_poutre(as_final, inp.b_cm, inp.enrobage_mm)
+        els = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa, ms, inp.fissuration)
+        pas += 1
+    res["as_elu_cm2"] = round(as_elu, 2)
+    res["dimensionnement"] = "ELS (σst)" if pas else "ELU"
     res["as_non_fragilite_cm2"] = round(as_nf, 2)
-    res["as_retenue_cm2"] = round(as_final, 2)
+    res["as_retenue_cm2"] = round(max(as_final, as_elu), 2)
     res["ferraillage"] = choix
     res["d_m"] = round(d_m, 4)
     res["b_cm"] = inp.b_cm
     res["h_cm"] = inp.h_cm
-    # ELS
-    ms = inp.ms_knm if inp.ms_knm else inp.mu_knm / 1.5
-    res["els"] = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa,
-                          ms, inp.fissuration)
+    res["els"] = els
     # effort tranchant (approximation usuelle BAEL)
     bc = inp.b_cm / 100.0
     tau_u = (inp.vu_kn * 1000.0) / (bc * d_m * 1e6)  # MPa
@@ -697,6 +763,159 @@ def sismique(inp: SismiqueInput):
 @app.get("/bars")
 def bars():
     return {"diametres_mm": [8, 10, 12, 14, 16, 20, 25, 32], "sections_cm2": {d: round(section_bar(d), 2) for d in [8, 10, 12, 14, 16, 20, 25, 32]}}
+
+# ───────────── calcul en lot : tout le modèle Robot en une requête ─────────────
+
+class Materiaux(BaseModel):
+    fc28_mpa: float = 25.0
+    fe_mpa: float = 500.0
+    sigma_sol_bar: float = Field(2.0, gt=0)
+    enrobage_poteau_mm: float = 30.0
+    enrobage_poutre_mm: float = 40.0
+    enrobage_semelle_mm: float = 50.0
+    fissuration: str = "prejudiciable"
+
+
+class LotInput(BaseModel):
+    """Ossature produite par le service Robot (voir robot_ossature.py)."""
+    poteaux: List[dict] = []
+    poutres: List[dict] = []
+    semelles: List[dict] = []
+    voiles: List[dict] = []
+    materiaux: Materiaux = Materiaux()
+
+
+def _verdict_poteau(r: dict) -> List[str]:
+    pb = []
+    if not r.get("applicable_b841", True):
+        pb.append("λ > 70 : méthode forfaitaire non applicable")
+    if (r.get("nu_rapport") or 0) > 1.0:
+        pb.append(f"Nu/Nu,lim = {r['nu_rapport']} > 1")
+    if r.get("section_suffisante") is False:
+        pb.append(f"As = {r['as_calculee_cm2']} cm² > 5 % B = {r['as_max_5pct_cm2']} cm² : section trop petite")
+    fc = r.get("flexion_composee") or {}
+    tm = fc.get("taux_utilisation_moment")
+    if fc.get("capacite_insuffisante"):
+        pb.append("section insuffisante en flexion composée (aucun moment repris sous Nu)")
+    elif isinstance(tm, (int, float)) and tm > 1.0:
+        pb.append(f"taux d'utilisation en flexion composée = {tm} > 1")
+    return pb
+
+
+def _verdict_poutre(r: dict) -> List[str]:
+    pb = []
+    if not (r.get("els") or {}).get("sigma_st_ok", True):
+        pb.append("σst ELS dépassée")
+    if not (r.get("effort_tranchant") or {}).get("tau_u_ok", True):
+        pb.append("τu > τu,lim")
+    if r.get("mode") != "simple":
+        pb.append("aciers comprimés nécessaires (μ > μlim)")
+    return pb
+
+
+def _verdict_semelle(r: dict) -> List[str]:
+    pb = []
+    if not r["poinconnement"]["ok"]:
+        pb.append("poinçonnement non vérifié")
+    if r.get("sigma_min_bar", 0) < 0:
+        pb.append("traction sous la semelle")
+    return pb
+
+
+def _verdict_voile(r: dict) -> List[str]:
+    pb = []
+    if not r.get("compression_ok", True):
+        pb.append("compression > 0,6 fc28")
+    if not r.get("tau_ok", True):
+        pb.append("τu > τu,lim")
+    return pb
+
+
+_MSG_VALIDATION = {
+    "greater_than": "doit être supérieur à {gt}", "greater_than_equal": "doit être au moins égal à {ge}",
+    "less_than": "doit être inférieur à {lt}", "less_than_equal": "doit être au plus égal à {le}",
+    "missing": "est obligatoire", "float_parsing": "doit être un nombre", "float_type": "doit être un nombre",
+}
+
+
+def messages_validation(err: ValidationError) -> List[str]:
+    """Erreurs pydantic en phrases courtes : « b_cm doit être supérieur à 10 »."""
+    sortie = []
+    for d in err.errors():
+        champ = d["loc"][-1] if d.get("loc") else "?"
+        modele = _MSG_VALIDATION.get(d.get("type"))
+        try:
+            texte = modele.format(**{k: (f"{v:g}" if isinstance(v, float) else v) for k, v in (d.get("ctx") or {}).items()}) if modele else d.get("msg")
+        except (KeyError, ValueError):
+            texte = d.get("msg")
+        sortie.append(f"{champ} {texte}")
+    return sortie
+
+
+def _manquants(el: dict, champs: List[str]) -> List[str]:
+    return [c for c in champs if el.get(c) is None]
+
+
+@app.post("/lot")
+def lot(inp: LotInput):
+    """Calcule chaque élément ; un élément incomplet ou en erreur est signalé, jamais ignoré."""
+    m = inp.materiaux
+    sorties = {"poteaux": [], "poutres": [], "semelles": [], "voiles": []}
+
+    def traiter(famille: str, el: dict, requis: List[str], construire, calculer, verdict):
+        ligne = {"id": el.get("id"), "nom": el.get("nom"), "niveau": el.get("niveau"),
+                 "axe": el.get("axe"), "entree": el}
+        manque = _manquants(el, requis)
+        if manque:
+            ligne.update(statut="incomplet", problemes=[f"donnée manquante : {', '.join(manque)}"])
+        else:
+            try:
+                res = calculer(construire(el))
+                pb = verdict(res)
+                ligne.update(resultat=res, statut="a_revoir" if pb else "verifie", problemes=pb)
+            except HTTPException as e:
+                ligne.update(statut="erreur", problemes=[str(e.detail)])
+            except ValidationError as e:   # donnée hors domaine (section trop petite…)
+                ligne.update(statut="erreur", problemes=messages_validation(e))
+            except Exception as e:         # erreur de calcul imprévue
+                ligne.update(statut="erreur", problemes=[f"calcul impossible : {str(e).splitlines()[0][:200]}"])
+        sorties[famille].append(ligne)
+
+    for el in inp.poteaux:
+        traiter("poteaux", el, ["a_cm", "b_cm", "lf_m", "nu_kn"],
+                lambda e: PoteauInput(a_cm=e["a_cm"], b_cm=e["b_cm"], lf_m=e["lf_m"], nu_kn=e["nu_kn"],
+                                      mx_knm=e.get("mx_knm") or 0.0, my_knm=e.get("my_knm") or 0.0,
+                                      fc28_mpa=m.fc28_mpa, fe_mpa=m.fe_mpa, cover_mm=m.enrobage_poteau_mm),
+                poteau, _verdict_poteau)
+    for el in inp.poutres:
+        traiter("poutres", el, ["b_cm", "h_cm", "mu_knm"],
+                lambda e: PoutreInput(b_cm=e["b_cm"], h_cm=e["h_cm"], mu_knm=e["mu_knm"],
+                                      vu_kn=e.get("vu_kn") or 0.0, ms_knm=e.get("ms_knm"),
+                                      enrobage_mm=m.enrobage_poutre_mm, fc28_mpa=m.fc28_mpa,
+                                      fe_mpa=m.fe_mpa, fissuration=m.fissuration),
+                poutre, _verdict_poutre)
+    for el in inp.semelles:
+        traiter("semelles", el, ["ns_kn", "a_poteau_cm", "b_poteau_cm"],
+                lambda e: SemelleInput(ns_kn=e["ns_kn"], nu_kn=e.get("nu_kn"),
+                                       Mx_knm=e.get("mx_knm") or 0.0, My_knm=e.get("my_knm") or 0.0,
+                                       a_poteau_cm=e["a_poteau_cm"], b_poteau_cm=e["b_poteau_cm"],
+                                       sigma_sol_bar=m.sigma_sol_bar, fc28_mpa=m.fc28_mpa,
+                                       fe_mpa=m.fe_mpa, cover_mm=m.enrobage_semelle_mm),
+                semelle, _verdict_semelle)
+    for el in inp.voiles:
+        traiter("voiles", el, ["longueur_m", "ep_cm", "n_kn"],
+                lambda e: VoileInput(longueur_m=e["longueur_m"], ep_cm=e["ep_cm"], n_kn=e["n_kn"],
+                                     m_knm=e.get("m_knm") or 0.0, v_kn=e.get("v_kn") or 0.0,
+                                     fc28_mpa=m.fc28_mpa, fe_mpa=m.fe_mpa, fissuration=m.fissuration),
+                voile, _verdict_voile)
+
+    resume = {"total": 0, "verifie": 0, "a_revoir": 0, "incomplet": 0, "erreur": 0}
+    for lignes in sorties.values():
+        for l in lignes:
+            resume["total"] += 1
+            resume[l["statut"]] += 1
+    return {**sorties, "resume": resume, "materiaux": m.model_dump()}
+
 
 if __name__ == '__main__':
     import uvicorn

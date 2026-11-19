@@ -1,0 +1,12 @@
+Photos du bandeau d'accueil (style « Stade »)
+
+  stade-facade.webp           façade en diagrid
+  stade-tribunes.webp         tribunes et anneau de toiture
+  chantier-echafaudage.webp   échafaudage au couchant
+
+Ces photos ont été fournies pour la maquette. AVANT TOUTE DISTRIBUTION COMMERCIALE
+de Bénayfacile, vérifiez que vous détenez les droits d'utilisation de chaque image
+(photos personnelles, licence achetée, ou banque d'images libre de droits).
+
+Pour changer une image : remplacez le fichier par un autre portant le même nom
+(format WebP ou JPEG renommé en .webp, environ 1800 × 1200 px). Aucun code à modifier.

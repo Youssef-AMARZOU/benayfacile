@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 import json
+import mimetypes
 import os
 import pathlib
 
@@ -20,18 +21,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+# Windows ne déclare pas toujours ces types : sans eux, les photos partiraient en
+# application/octet-stream et la feuille de style pourrait être refusée.
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("text/javascript", ".js")
+
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 # BNAY_DATA : dossier de données inscriptible (fixé par le lanceur .exe)
 REFS = pathlib.Path(os.environ.get("BNAY_DATA", str(ROOT))) / "referentiels"
 STATIC = HERE / "static"
 
+# Adresses des microservices. Le lanceur de l'application de bureau choisit des
+# ports libres au démarrage et les transmet par BNAY_URL_<SERVICE> ; les valeurs
+# par défaut correspondent à run_services.bat.
 SERVICES = {
-    "robot": "http://127.0.0.1:8001",
-    "engine": "http://127.0.0.1:8002",
-    "dxf": "http://127.0.0.1:8003",
-    "report": "http://127.0.0.1:8004",
+    "robot": os.environ.get("BNAY_URL_ROBOT", "http://127.0.0.1:8001"),
+    "engine": os.environ.get("BNAY_URL_ENGINE", "http://127.0.0.1:8002"),
+    "dxf": os.environ.get("BNAY_URL_DXF", "http://127.0.0.1:8003"),
+    "report": os.environ.get("BNAY_URL_REPORT", "http://127.0.0.1:8004"),
 }
+
+# Appels internes en boucle locale : ignorer les proxys système (HTTP_PROXY,
+# proxy Windows), qui casseraient les appels vers 127.0.0.1 sur certains postes.
+_HTTP = requests.Session()
+_HTTP.trust_env = False
 
 app = FastAPI(title="Bénayfacile — Gateway", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -42,42 +57,31 @@ def health():
     status = {}
     for name, base in SERVICES.items():
         try:
-            r = requests.get(base + "/health", timeout=2.5)
+            r = _HTTP.get(base + "/health", timeout=2.5)
             status[name] = "ok" if r.ok else f"erreur {r.status_code}"
         except Exception as e:
             status[name] = f"injoignable ({e})"
     return {"service": "gateway", "status": "ok", "services": status}
 
 
-@app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy(service: str, path: str, request: Request):
-    base = SERVICES.get(service)
-    if not base:
-        raise HTTPException(404, f"service inconnu : {service}")
-    url = f"{base}/{path}"
-    params = dict(request.query_params)
-    try:
-        if request.method == "GET":
-            r = requests.get(url, params=params, timeout=60)
-        else:
-            body = await request.body()
-            headers = {"Content-Type": request.headers.get("content-type", "application/json")}
-            r = requests.request(request.method, url, data=body, params=params, headers=headers, timeout=120)
-    except requests.RequestException as e:
-        raise HTTPException(502, f"service {service} injoignable : {e}")
-    content_type = r.headers.get("content-type", "application/octet-stream")
-    return Response(content=r.content, status_code=r.status_code,
-                    media_type=content_type.split(";")[0],
-                    headers={"x-upstream-status": str(r.status_code)})
-
-
 @app.get("/api/dxf/download/{nom}")
 def dxf_download(nom: str):
     url = SERVICES["dxf"] + f"/download/{nom}"
-    r = requests.get(url, timeout=60)
+    r = _HTTP.get(url, timeout=60)
     if r.status_code != 200:
         raise HTTPException(r.status_code, "fichier introuvable")
     return Response(content=r.content, media_type="application/dxf",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+
+@app.get("/api/report/excel/{nom}")
+def excel_download(nom: str):
+    # route dédiée (le proxy générique ne transmet pas Content-Disposition)
+    r = _HTTP.get(SERVICES["report"] + f"/excel/{nom}", timeout=60)
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "fichier introuvable")
+    return Response(content=r.content,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{nom}"'})
 
 
@@ -102,8 +106,8 @@ async def bureau_put(request: Request):
 def demo():
     """Scénario de démonstration R+4 (identique à la simulation Robot)."""
     return {
-        "projet": "Immeuble R+4 — Casablanca",
-        "client": "SARL Exemple",
+        "projet": "Exemple — immeuble R+4",
+        "client": "Démonstration",
         "site": "Casablanca, Maroc",
         "robot": {"simuler": True},
         "sismique": {"hauteur_m": 15.0, "longueur_contreventement_m": 12.0,
@@ -128,6 +132,30 @@ def demo():
         "voiles": [{"longueur_m": 4.0, "ep_cm": 18, "fc28_mpa": 25, "fe_mpa": 500,
                     "n_kn": 1200, "m_knm": 260, "v_kn": 180}],
     }
+
+
+# Proxy générique : déclaré APRÈS les routes /api/... dédiées, que FastAPI doit trouver d'abord.
+@app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy(service: str, path: str, request: Request):
+    base = SERVICES.get(service)
+    if not base:
+        raise HTTPException(404, f"service inconnu : {service}")
+    url = f"{base}/{path}"
+    params = dict(request.query_params)
+    try:
+        if request.method == "GET":
+            r = _HTTP.get(url, params=params, timeout=60)
+        else:
+            body = await request.body()
+            headers = {"Content-Type": request.headers.get("content-type", "application/json")}
+            delai = 1800 if service == "robot" else 120    # ouverture + analyse Robot : parfois longues
+            r = _HTTP.request(request.method, url, data=body, params=params, headers=headers, timeout=delai)
+    except requests.RequestException as e:
+        raise HTTPException(502, f"service {service} injoignable : {e}")
+    content_type = r.headers.get("content-type", "application/octet-stream")
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=content_type.split(";")[0],
+                    headers={"x-upstream-status": str(r.status_code)})
 
 
 app.mount("/", StaticFiles(directory=str(STATIC), html=True), name="static")

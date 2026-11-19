@@ -1,11 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Construction : python -m PyInstaller --noconfirm Benayfacile.spec   (voir build_exe.bat)
+# Application de bureau Bénayfacile — construction : build_exe.bat
+#   dist\Benayfacile\Benayfacile.exe   (dossier complet, démarrage rapide)
+#   installer\Benayfacile-Setup-x.y.z.exe   (installateur Inno Setup)
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hidden = (
-    ["robot_service", "engine_service", "dxf_service", "report_service", "common", "app"]
+    ["robot_service", "robot_ossature", "excel_report", "plans_ferraillage", "import_excel", "note_calcul", "tex_mathml", "engine_service", "dxf_service", "report_service", "common", "app"]
     + collect_submodules("uvicorn")
-    + ["win32com", "win32com.client", "pythoncom", "pywintypes"]   # pilotage Robot (si pywin32 installé)
+    + collect_submodules("webview")                                   # fenêtre native (pywebview)
+    + ["win32com", "win32com.client", "pythoncom", "pywintypes"]      # pilotage Robot (si pywin32 installé)
 )
 
 a = Analysis(
@@ -15,16 +18,19 @@ a = Analysis(
         ("gateway/static", "static"),          # tableau de bord (gateway: HERE / "static")
         ("referentiels", "referentiels"),      # bael.json, rps.json, bureau.json par défaut
         ("examples", "examples"),
-    ] + collect_data_files("ezdxf"),
+        ("services/polices", "polices"),     # Latin Modern de la note de calcul (licence GUST)
+    ] + collect_data_files("ezdxf") + collect_data_files("webview"),
     hiddenimports=hidden,
     excludes=["tkinter", "matplotlib", "pytest", "IPython"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
 exe = EXE(
-    pyz, a.scripts, a.binaries, a.datas, [],
+    pyz, a.scripts, [],
+    exclude_binaries=True,      # mode dossier : pas de décompression à chaque lancement
     name="Benayfacile",
-    console=True,           # fenêtre console = journal + fermeture = arrêt propre
+    console=False,              # application fenêtrée : aucune console pour l'utilisateur
+    icon="assets/benayfacile.ico",
     upx=False,
-    onefile=True,
 )
+coll = COLLECT(exe, a.binaries, a.datas, name="Benayfacile", upx=False)

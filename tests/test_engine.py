@@ -169,3 +169,53 @@ def test_choisir_barres_couvre_section():
 
 def test_section_bar_ha12():
     assert section_bar(12) == pytest.approx(1.130973, abs=1e-4)
+
+
+# ---------- ELS poutre (régression : l'axe neutre n'était jamais trouvé) ----------
+def test_els_axe_neutre_section_rectangulaire():
+    # b = 25 cm, d = 0,45 m, As = 6 HA12 = 6,79 cm² : 0,125 y² + 15 As y − 15 As d = 0 → y ≈ 0,155 m
+    r = e.flex_els(25, 0.45, 6.79, 25, 500, 80.0, "prejudiciable")
+    assert "erreur" not in r
+    assert r["axe_neutre_y_m"] == pytest.approx(0.155, abs=0.002)
+    # σst ≈ Ms / (As (d − y/3)) ≈ 80e3 / (6,79e-4 × 0,398) ≈ 296 MPa > 250 MPa (préjudiciable, FeE500)
+    assert r["sigma_st_mpa"] == pytest.approx(296, abs=3)
+    assert r["sigma_st_lim_mpa"] == 250.0 and r["sigma_st_ok"] is False
+
+
+def test_poutre_dimensionnee_a_l_els_en_fissuration_prejudiciable():
+    r = e.poutre(e.PoutreInput(b_cm=25, h_cm=50, mu_knm=120, vu_kn=90, fissuration="prejudiciable"))
+    assert r["dimensionnement"] == "ELS (σst)"
+    assert r["els"]["sigma_st_ok"] is True
+    assert r["ferraillage"]["as_fournie_cm2"] >= 8.2          # ≈ Ms / (z σst,lim)
+    peu = e.poutre(e.PoutreInput(b_cm=25, h_cm=50, mu_knm=120, vu_kn=90, fissuration="peu_prejudiciable"))
+    assert peu["dimensionnement"] == "ELU" and peu["els"]["sigma_st_ok"] is True
+
+
+# ---------- flexion composée (régression : taux de 1e+20 quand la capacité est nulle) ----------
+def test_flexion_composee_capacite_nulle_signalee():
+    r = e.poteau(e.PoteauInput(a_cm=20, b_cm=20, lf_m=2.1, nu_kn=4000, mx_knm=25, my_knm=10))
+    fc = r["flexion_composee"]
+    assert fc["taux_utilisation_moment"] is None and fc["capacite_insuffisante"] is True
+    lot = e.lot(e.LotInput(poteaux=[{"id": "P", "nom": "P", "a_cm": 20, "b_cm": 20, "lf_m": 2.1,
+                                       "nu_kn": 4000, "mx_knm": 25, "my_knm": 10}]))
+    assert any("aucun moment repris" in pb for pb in lot["poteaux"][0]["problemes"])
+    ok = e.poteau(e.PoteauInput(a_cm=30, b_cm=30, lf_m=3, nu_kn=950, mx_knm=25, my_knm=10))["flexion_composee"]
+    assert ok["taux_utilisation_moment"] == pytest.approx(0.741, abs=0.01) and ok["capacite_insuffisante"] is False
+
+
+# ---------- aciers de poutre constructibles (régression : « 1 HA32 », « 3 HA32 » en 25 cm) ----------
+@pytest.mark.parametrize("as_requis", [0.5, 3.6, 5.8, 8.0, 12.3, 15.0, 21.0])
+def test_aciers_poutre_constructibles(as_requis):
+    c = e.choisir_barres_poutre(as_requis, b_cm=25, enrobage_mm=40)
+    assert c["n"] >= 2 and 10 <= c["diametre_mm"] <= 25
+    assert c["as_fournie_cm2"] >= as_requis
+    # les barres d'un lit tiennent dans la largeur utile, espacement libre ≥ max(Ø, 25 mm)
+    par_lit = -(-c["n"] // c["lits"])
+    e_libre = max(c["diametre_mm"], 25)
+    assert par_lit * c["diametre_mm"] + (par_lit - 1) * e_libre <= 250 - 2 * (40 + 8)
+    assert c["lits"] <= 2
+
+
+def test_poutre_ne_retient_jamais_une_seule_barre():
+    r = e.poutre(e.PoutreInput(b_cm=25, h_cm=50, mu_knm=93.2, vu_kn=60))
+    assert r["ferraillage"]["n"] >= 2 and r["ferraillage"]["diametre_mm"] <= 25
