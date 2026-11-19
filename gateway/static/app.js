@@ -188,8 +188,10 @@ function tabProjet() {
       <button class="btn gold" id="rb-calc" disabled>Calculer tout le modèle</button>
       <button class="btn ghost small" id="rb-add" disabled>Envoyer à la synthèse</button>
       <button class="btn ghost small" id="rb-xlsx" disabled>Exporter en Excel</button>
+      <button class="btn ghost small" id="rb-dxf" disabled>Plans de ferraillage (DXF)</button>
     </div>
     <p class="export" id="rb-xlsx-res"></p>
+    <p class="export" id="rb-dxf-res"></p>
   </div>
 </div>
 <div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
@@ -223,8 +225,8 @@ function tabProjet() {
           vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
           dessiner();
-          $('rb-add').disabled = false; $('rb-xlsx').disabled = false;
-          $('rb-xlsx-res').innerHTML = '';
+          $('rb-add').disabled = false; $('rb-xlsx').disabled = false; $('rb-dxf').disabled = false;
+          $('rb-xlsx-res').innerHTML = ''; $('rb-dxf-res').innerHTML = '';
         } catch (e) { resEl.innerHTML = `<p class="warn">Erreur : ${esc(e.message)}</p>`; }
       });
 
@@ -253,6 +255,23 @@ function tabProjet() {
           const url = '/api/report/excel/' + encodeURIComponent(r.fichier);
           el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code>.<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
         } catch (e) { el.innerHTML = `<span class="warn">Export impossible : ${esc(e.message)}</span>`; }
+      });
+
+      $('rb-dxf').addEventListener('click', async () => {
+        if (!vue.lot) return;
+        const el = $('rb-dxf-res'); el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
+        try {
+          const p = state.project, o = vue.modele?.ossature || {};
+          const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot,
+              trame_x_m: o.trame_x_m || [], trame_y_m: o.trame_y_m || [], bureau: state.bureau }) });
+          const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
+          const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
+          el.innerHTML = `${r.planches.length} planches A1 — ${types} — ${r.elements_dessines} éléments dessinés, `
+            + `${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
+            + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
+            + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+        } catch (e) { el.innerHTML = `<span class="warn">Plans impossibles : ${esc(e.message)}</span>`; }
       });
 
       $('rb-res').addEventListener('click', (e) => {

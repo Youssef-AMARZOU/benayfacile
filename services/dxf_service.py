@@ -10,7 +10,9 @@ import pathlib
 import json
 from typing import List, Optional
 
-from fastapi import FastAPI
+import re
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -18,6 +20,8 @@ from pydantic import BaseModel
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.units import MM
+
+from plans_ferraillage import dessiner_plans
 
 HERE = pathlib.Path(__file__).resolve().parent
 # BNAY_DATA : dossier de données inscriptible (fixé par le lanceur .exe)
@@ -252,11 +256,40 @@ def generate(inp: DxfInput):
             "calques": list(LAYERS), "format": "A3", "unites": "mm"}
 
 
+class PlansInput(BaseModel):
+    projet: str = "Projet"
+    client: str = ""
+    site: str = ""
+    indice: str = "A"
+    lot: dict                          # réponse de POST /lot (moteur)
+    trame_x_m: List[float] = []
+    trame_y_m: List[float] = []
+    bureau: Optional[dict] = None
+
+
+def _slug(texte: str) -> str:
+    t = re.sub(r"[^A-Za-z0-9]+", "_", texte.encode("ascii", "ignore").decode()).strip("_")
+    return (t or "Projet")[:40]
+
+
+@app.post("/plans")
+def plans(inp: PlansInput):
+    """Dossier de plans de ferraillage de tout le modèle (un DXF, plusieurs planches A1)."""
+    projet = {"projet": inp.projet, "client": inp.client, "site": inp.site, "indice": inp.indice}
+    doc, resume = dessiner_plans(inp.lot, projet, lire_bureau(inp.bureau), inp.trame_x_m, inp.trame_y_m)
+    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    chemin = OUT / f"Plans_Ferraillage_{_slug(inp.projet)}_{now}.dxf"
+    doc.saveas(chemin)
+    return {"fichier": chemin.name, "octets": chemin.stat().st_size, "dossier": str(OUT), **resume}
+
+
 @app.get("/download/{nom}")
 def download(nom: str):
+    # un simple nom de fichier .dxf du dossier output : pas de chemin (« ..\ » sous Windows)
+    if nom != pathlib.Path(nom).name or not nom.lower().endswith(".dxf"):
+        raise HTTPException(400, "nom de fichier invalide")
     chemin = OUT / nom
-    if not chemin.exists():
-        from fastapi import HTTPException
+    if not chemin.is_file():
         raise HTTPException(404, "fichier introuvable")
     return FileResponse(chemin, media_type="application/dxf", filename=nom)
 
