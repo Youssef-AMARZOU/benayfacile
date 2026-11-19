@@ -29,6 +29,13 @@ services:
     command: python gateway/app.py
     ports: ["8090:8090"]
     depends_on: [robot, engine, dxf, report]
+    # Le gateway appelle ses services par BNAY_URL_* ; sans elles il viserait
+    # 127.0.0.1 (inatteignable depuis SON conteneur) au lieu des conteneurs frères.
+    environment:
+      BNAY_URL_ROBOT: http://robot:8001
+      BNAY_URL_ENGINE: http://engine:8002
+      BNAY_URL_DXF: http://dxf:8003
+      BNAY_URL_REPORT: http://report:8004
     restart: unless-stopped
 
 # NOTE : le pilotage COM de Robot (Interop.RobotOM) exige Windows + Robot installé.

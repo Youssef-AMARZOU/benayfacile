@@ -1,5 +1,9 @@
 # BÉNAYFACILE
 
+[![CI/CD](https://github.com/Youssef-AMARZOU/benayfacile/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Youssef-AMARZOU/benayfacile/actions/workflows/ci-cd.yml)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io%2Fbenayfacile-2496ED?logo=docker&logoColor=white)](https://github.com/Youssef-AMARZOU/benayfacile/pkgs/container/benayfacile)
+[![Release](https://img.shields.io/github/v/release/Youssef-AMARZOU/benayfacile?sort=semver)](https://github.com/Youssef-AMARZOU/benayfacile/releases)
+
 **Le bureau d'études structure marocain, automatisé.**
 
 Bénayfacile calcule vos poteaux, poutres, semelles et voiles selon le
@@ -46,7 +50,7 @@ les 5 services démarrent dans un seul processus, le navigateur s'ouvre sur
 ```bat
 pip install -r requirements.txt
 run_services.bat          :: lance Robot(8001) Engine(8002) DXF(8003) Rapport(8004) Gateway(8090)
-python -m pytest tests/   :: 15 tests
+python -m pytest tests/   :: 95 tests
 stop_services.bat         :: arrêt propre
 ```
 
@@ -55,6 +59,39 @@ stop_services.bat         :: arrêt propre
 ```sh
 docker compose up --build
 ```
+
+Cinq conteneurs — Robot (8001), Engine (8002), DXF (8003), Rapport (8004),
+Gateway (8090) — la passerelle rejoint les services par les variables
+`BNAY_URL_*` déjà câblées dans `docker-compose.yml`.
+Tableau de bord : `http://127.0.0.1:8090`.
+
+## Déploiement continu (GitHub Actions)
+
+Le workflow [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) tourne
+à chaque `push` sur `main`, à chaque *pull request* et à chaque tag `v*` :
+
+| Étape | Déclencheur | Résultat |
+|---|---|---|
+| **Tests** `pytest` (Ubuntu, Python 3.12) | push, PR, tag | 95 tests ; un échec bloque tout le reste |
+| **Image Docker → GHCR** | push sur `main` et tag `v*` (build seul sur PR) | `ghcr.io/youssef-amarzou/benayfacile` |
+| **Release Windows** | tag `v*` uniquement | `Benayfacile-Setup-x.y.z.exe` + `Benayfacile-win64.zip` attachés à la GitHub Release (build PyInstaller + Inno Setup, tests bloquants) |
+
+**Tags de l'image Docker** : `latest` (dernière release), `main` (dernier
+commit sur `main`), `x.y.z` / `x.y` (release semver), `sha-…` (commit exact).
+
+**Publier une release :**
+
+```sh
+git tag v0.4.0
+git push origin v0.4.0
+```
+
+Les tests tournent d'abord, puis l'image part sur GHCR et la release
+Windows est créée automatiquement (artefacts : installateur + archive).
+
+**Paquet GHCR** : le premier `push` crée le paquet **privé** par défaut —
+le rendre public via *Packages → benayfacile → Package settings →
+Change visibility* si vous voulez des pulls anonymes.
 
 ## Architecture
 

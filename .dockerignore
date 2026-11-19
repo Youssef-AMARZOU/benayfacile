@@ -1,0 +1,15 @@
+# Contexte de build Docker : on n'importe que ce qui s'exécute dans l'image.
+# (sinon ~310 Mo d'artefacts partent vers le démon à chaque build)
+.git
+.github
+.gitattributes
+.gitignore
+build/
+dist/
+installer/
+output/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+Benayfacile.spec
+docker-compose.yml

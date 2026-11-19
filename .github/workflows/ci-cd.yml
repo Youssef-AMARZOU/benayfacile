@@ -1,0 +1,157 @@
+# Bénayfacile — CI/CD : tests → image Docker (GHCR) → release Windows
+#
+#   push sur main / pull request / tag v*  →  pytest (Ubuntu, Python 3.12)
+#   push sur main + tag v*                 →  image ghcr.io/youssef-amarzou/benayfacile
+#   tag v*                                 →  Benayfacile.exe + installateur Inno Setup
+#                                             attachés à la GitHub Release
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ---------------------------------------------------------------- tests
+  test:
+    name: Tests pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest httpx
+
+      - name: Lancer les tests
+        run: python -m pytest tests/ -q
+
+  # ------------------------------------------------- image Docker → GHCR
+  docker:
+    name: Image Docker → GHCR
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Connexion à GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR exige un nom d'image en minuscules (le propriétaire est « Youssef-AMARZOU »)
+      - name: Nom de l'image
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Métadonnées (tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build (+ push sur main et sur les tags v*)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # -------------------------------------- release Windows (exe + setup)
+  windows:
+    name: Release Windows (exe + setup)
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Dépendances (build + tests)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller pywin32 pytest httpx
+
+      - name: Tests (le build s'arrête si un test échoue)
+        shell: pwsh
+        run: python -m pytest tests/ -q
+
+      - name: Application (PyInstaller)
+        shell: pwsh
+        run: python -m PyInstaller --noconfirm --clean Benayfacile.spec
+
+      - name: Installateur Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc installer.iss
+
+      - name: Archive de l'application (sans installateur)
+        shell: pwsh
+        run: Compress-Archive -Path dist\Benayfacile -DestinationPath Benayfacile-win64.zip -Force
+
+      - name: Artefacts de la release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Benayfacile-Windows
+          path: |
+            installer/*.exe
+            Benayfacile-win64.zip
+          if-no-files-found: error
+
+      - name: Publier la GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/*.exe
+            Benayfacile-win64.zip
+          generate_release_notes: true

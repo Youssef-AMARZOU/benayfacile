@@ -235,7 +235,7 @@ service échoue en cours de route, ceux déjà lancés sont arrêtés (`arreter(
 build_exe.bat
 ```
 1. installe les dépendances + PyInstaller + pywin32 ;
-2. lance les 15 tests : **le build s'arrête si un test échoue** ;
+2. lance la suite pytest : **le build s'arrête si un test échoue** ;
 3. produit `dist\Benayfacile.exe` (un seul fichier, `Benayfacile.spec`).
 
 Au premier lancement, `Benayfacile_donnees\` est créé à côté de l'exe :
