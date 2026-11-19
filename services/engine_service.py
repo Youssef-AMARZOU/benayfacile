@@ -17,7 +17,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -98,7 +98,9 @@ def _resolve_y(b_cm: float, d_m: float, as_cm2: float, asc_cm2: float = 0.0,
     Asc = asc_cm2 / 1e4
 
     def eq(y):
-        return bc * y**2 / 2 + n * As * (d_m - y) - n * Asc * (y - dprime_m)
+        # moment statique de la section homogénéisée par rapport à l'axe neutre = 0 :
+        # béton comprimé + aciers comprimés − aciers tendus (n = 15)
+        return bc * y**2 / 2 + n * Asc * (y - dprime_m) - n * As * (d_m - y)
     lo, hi = 1e-6, d_m
     flo, fhi = eq(lo), eq(hi)
     tries = 0
@@ -149,12 +151,12 @@ def flex_els(b_cm: float, d_m: float, as_cm2: float, fc28: float, fe: float,
         sig_lim = min(2 / 3 * fe, max(0.5 * fe, 110 * math.sqrt(eta * ft)))
     else:  # tres_prejudiciable
         sig_lim = 0.8 * min(2 / 3 * fe, max(0.5 * fe, 110 * math.sqrt(eta * ft)))
-    return {
-        "axe_neutre_y_m": round(y, 4), "inertie_I_m4": f"{I:.3e}",
-        "sigma_bc_mpa": round(sigma_bc, 2), "sigma_bc_lim_mpa": 0.6 * fc28,
-        "sigma_bc_ok": sigma_bc <= 0.6 * fc28,
-        "sigma_st_mpa": round(sigma_st, 1), "sigma_st_lim_mpa": round(sig_lim, 1),
-        "sigma_st_ok": sigma_st <= sig_lim,
+    return {   # types Python natifs (et non numpy) : la réponse doit être sérialisable en JSON
+        "axe_neutre_y_m": round(float(y), 4), "inertie_I_m4": f"{float(I):.3e}",
+        "sigma_bc_mpa": round(float(sigma_bc), 2), "sigma_bc_lim_mpa": 0.6 * fc28,
+        "sigma_bc_ok": bool(sigma_bc <= 0.6 * fc28),
+        "sigma_st_mpa": round(float(sigma_st), 1), "sigma_st_lim_mpa": round(sig_lim, 1),
+        "sigma_st_ok": bool(sigma_st <= sig_lim),
         "fissuration": fissuration,
     }
 
@@ -307,12 +309,21 @@ def poteau_moment_capacity(a_cm: float, h_cm: float, as_fournie_cm2: float, fc28
         # pas de racine : prendre x minimisant l'écart
         x_star = min(xs, key=lambda xx: abs(forces(xx)[0] - nu_n))
     nf, m = forces(x_star)
-    m_cap_knm = abs(m) / 1000.0
-    ratio = abs(moment_knm) / m_cap_knm if m_cap_knm > 0 else None
-    return {"x_axe_neutre_m": round(x_star, 4), "moment_capable_knm": round(m_cap_knm, 2),
+    # équilibre atteint ? (sinon la section ne reprend même pas Nu : pas de moment capable)
+    equilibre = abs(nf - nu_n) <= 0.02 * max(nu_n, 1.0)
+    m_cap_knm = float(abs(m)) / 1000.0 if equilibre else 0.0
+    if m_cap_knm < 0.01:
+        m_cap_knm = 0.0
+    if m_cap_knm > 0:
+        ratio = abs(moment_knm) / m_cap_knm
+    else:
+        ratio = None
+    return {"x_axe_neutre_m": round(float(x_star), 4), "moment_capable_knm": round(m_cap_knm, 2),
             "moment_applique_knm": round(abs(moment_knm), 2),
             "taux_utilisation_moment": round(ratio, 3) if ratio is not None else None,
-            "n_verification_kn": round(nf / 1000.0, 1),
+            "capacite_insuffisante": bool(m_cap_knm == 0.0 and (not equilibre or abs(moment_knm) > 0)),
+            "equilibre_atteint": bool(equilibre),
+            "n_verification_kn": round(float(nf) / 1000.0, 1),
             "hypotheses": "diagramme rectangulaire 0,8 y, acier symétrique nappe tête/pieds, εc = 3,5 ‰ (pivot B) ; si section entièrement comprimée résultat à justifier par A.4.4 / E.7."}
 
 
@@ -440,16 +451,26 @@ def poutre(inp: PoutreInput):
     as_nf = non_fragilite(inp.b_cm, d_m, inp.fc28_mpa, inp.fe_mpa)
     as_final = max(res["as_cm2"], as_nf)
     choix = choisir_barres(as_final, d_max_mm=32, n_max=8)
+    # ELS (BAEL A.4.5) : en fissuration préjudiciable ou très préjudiciable, l'ELS gouverne
+    # souvent ; As est augmenté jusqu'à σst ≤ σst,lim (et σbc ≤ 0,6 fc28 vérifié).
+    ms = inp.ms_knm if inp.ms_knm else inp.mu_knm / 1.5
+    els = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa, ms, inp.fissuration)
+    as_elu = as_final
+    pas = 0
+    while not els.get("sigma_st_ok", True) and pas < 60:
+        as_final = choix["as_fournie_cm2"] + 0.25
+        choix = choisir_barres(as_final, d_max_mm=32, n_max=8)
+        els = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa, ms, inp.fissuration)
+        pas += 1
+    res["as_elu_cm2"] = round(as_elu, 2)
+    res["dimensionnement"] = "ELS (σst)" if pas else "ELU"
     res["as_non_fragilite_cm2"] = round(as_nf, 2)
-    res["as_retenue_cm2"] = round(as_final, 2)
+    res["as_retenue_cm2"] = round(max(as_final, as_elu), 2)
     res["ferraillage"] = choix
     res["d_m"] = round(d_m, 4)
     res["b_cm"] = inp.b_cm
     res["h_cm"] = inp.h_cm
-    # ELS
-    ms = inp.ms_knm if inp.ms_knm else inp.mu_knm / 1.5
-    res["els"] = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa,
-                          ms, inp.fissuration)
+    res["els"] = els
     # effort tranchant (approximation usuelle BAEL)
     bc = inp.b_cm / 100.0
     tau_u = (inp.vu_kn * 1000.0) / (bc * d_m * 1e6)  # MPa
@@ -730,8 +751,11 @@ def _verdict_poteau(r: dict) -> List[str]:
         pb.append(f"Nu/Nu,lim = {r['nu_rapport']} > 1")
     if r.get("section_suffisante") is False:
         pb.append(f"As = {r['as_calculee_cm2']} cm² > 5 % B = {r['as_max_5pct_cm2']} cm² : section trop petite")
-    tm = (r.get("flexion_composee") or {}).get("taux_utilisation_moment")
-    if isinstance(tm, (int, float)) and tm > 1.0:
+    fc = r.get("flexion_composee") or {}
+    tm = fc.get("taux_utilisation_moment")
+    if fc.get("capacite_insuffisante"):
+        pb.append("section insuffisante en flexion composée (aucun moment repris sous Nu)")
+    elif isinstance(tm, (int, float)) and tm > 1.0:
         pb.append(f"taux d'utilisation en flexion composée = {tm} > 1")
     return pb
 
@@ -765,6 +789,27 @@ def _verdict_voile(r: dict) -> List[str]:
     return pb
 
 
+_MSG_VALIDATION = {
+    "greater_than": "doit être supérieur à {gt}", "greater_than_equal": "doit être au moins égal à {ge}",
+    "less_than": "doit être inférieur à {lt}", "less_than_equal": "doit être au plus égal à {le}",
+    "missing": "est obligatoire", "float_parsing": "doit être un nombre", "float_type": "doit être un nombre",
+}
+
+
+def messages_validation(err: ValidationError) -> List[str]:
+    """Erreurs pydantic en phrases courtes : « b_cm doit être supérieur à 10 »."""
+    sortie = []
+    for d in err.errors():
+        champ = d["loc"][-1] if d.get("loc") else "?"
+        modele = _MSG_VALIDATION.get(d.get("type"))
+        try:
+            texte = modele.format(**{k: (f"{v:g}" if isinstance(v, float) else v) for k, v in (d.get("ctx") or {}).items()}) if modele else d.get("msg")
+        except (KeyError, ValueError):
+            texte = d.get("msg")
+        sortie.append(f"{champ} {texte}")
+    return sortie
+
+
 def _manquants(el: dict, champs: List[str]) -> List[str]:
     return [c for c in champs if el.get(c) is None]
 
@@ -788,8 +833,10 @@ def lot(inp: LotInput):
                 ligne.update(resultat=res, statut="a_revoir" if pb else "verifie", problemes=pb)
             except HTTPException as e:
                 ligne.update(statut="erreur", problemes=[str(e.detail)])
-            except Exception as e:   # entrée hors domaine (pydantic, calcul)
-                ligne.update(statut="erreur", problemes=[str(e).splitlines()[0][:200]])
+            except ValidationError as e:   # donnée hors domaine (section trop petite…)
+                ligne.update(statut="erreur", problemes=messages_validation(e))
+            except Exception as e:         # erreur de calcul imprévue
+                ligne.update(statut="erreur", problemes=[f"calcul impossible : {str(e).splitlines()[0][:200]}"])
         sorties[famille].append(ligne)
 
     for el in inp.poteaux:
