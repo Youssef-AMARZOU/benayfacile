@@ -1,4 +1,4 @@
-# Bénayfacile — CI/CD : tests → image Docker (GHCR) → release Windows
+﻿# Bénayfacile — CI/CD : tests → image Docker (GHCR) → release Windows
 #
 #   push sur main / pull request / tag v*  →  pytest (Ubuntu, Python 3.12)
 #   push sur main + tag v*                 →  image ghcr.io/youssef-amarzou/benayfacile
@@ -28,9 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -53,13 +53,13 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Connexion à GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -71,7 +71,7 @@ jobs:
 
       - name: Métadonnées (tags)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -82,7 +82,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build (+ push sur main et sur les tags v*)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
@@ -95,15 +95,17 @@ jobs:
   windows:
     name: Release Windows (exe + setup)
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Sur un tag v* : build + release. En workflow_dispatch : dry-run du build
+    # (artefacts téléchargeables, aucune publication) pour valider avant de taguer.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -140,7 +142,7 @@ jobs:
         run: Compress-Archive -Path dist\Benayfacile -DestinationPath Benayfacile-win64.zip -Force
 
       - name: Artefacts de la release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Benayfacile-Windows
           path: |
@@ -149,7 +151,8 @@ jobs:
           if-no-files-found: error
 
       - name: Publier la GitHub Release
-        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             installer/*.exe
