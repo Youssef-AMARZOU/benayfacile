@@ -39,6 +39,38 @@ Bénayfacile calcule vos poteaux, poutres, semelles et voiles selon le
 
 ## Démarrage rapide
 
+### Installation Windows (recommandé — PC modeste compatible)
+
+L'installation est du **« suivant, suivant, terminé »** — aucun Python, aucun
+droit administrateur, aucune configuration :
+
+1. Télécharger **`Benayfacile-Setup-0.3.0.exe`** (31,8 Mo) depuis la
+   [Release v0.3.0](https://github.com/Youssef-AMARZOU/benayfacile/releases/tag/v0.3.0)
+   — alternative portable : `Benayfacile-win64.zip` (39,9 Mo), à extraire et
+   lancer sans installation.
+2. Double-clic sur le fichier → assistant en français → **Suivant** →
+   **Suivant** (installation dans le profil utilisateur, **sans droits
+   admin**) → **Terminer**.
+3. Lancer **Bénayfacile** (menu Démarrer ou icône Bureau) : la fenêtre
+   s'ouvre toute seule sur le tableau de bord, services prêts en ~4 s.
+
+**Sur un PC modeste, tout est prévu :**
+
+- Windows 10/11 **64 bits** suffit — pas de Python, pas d'internet au
+  fonctionnement (100 % local), pas de GPU, **~99 Mo de RAM** mesurés pour
+  toute l'application (un seul processus, 5 services en threads).
+- **Robot Structural Analysis non requis** : le mode simulation R+4 est
+  intégré pour travailler sans Robot.
+- Zéro configuration réseau : le lanceur choisit des ports libres
+  automatiquement et ouvre le tableau de bord lui-même.
+- Données dans `%LOCALAPPDATA%\Benayfacile` (notes, DXF, données du bureau) —
+  conservées même si vous désinstallez.
+- En cas de doute sur le fichier : `Benayfacile-Setup-*.exe` = installation ;
+  `Benayfacile-win64.zip` = version portable (clé USB).
+
+> **À éviter sur un poste léger** : Docker (Docker Desktop est lourd) et la
+> compilation depuis les sources — l'installateur de la Release suffit.
+
 ### Sous Windows (poste BET, sans Python)
 
 Lancer `Benayfacile.exe` (voir `build_exe.bat` pour la construction) :
