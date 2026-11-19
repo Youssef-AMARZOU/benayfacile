@@ -442,6 +442,48 @@ def poteau(inp: PoteauInput):
     res["flexion_composee"] = moment
     return res
 
+def choisir_barres_poutre(as_requis_cm2: float, b_cm: float, enrobage_mm: float = 40.0, cadre_mm: float = 8.0) -> dict:
+    """Aciers longitudinaux d'une poutre, constructibles sur chantier.
+
+    Règles retenues (BAEL A.7.2 et pratique BET) :
+      - au moins 2 barres ; Ø de 10 à 25 mm (32 mm seulement si b > 30 cm) ;
+      - espacement libre entre barres ≥ max(Ø, 25 mm) ; au plus 2 lits ;
+      - on évite plus de 25 % d'acier en excès, puis on préfère un seul lit, l'excès le plus faible
+        et le moins de barres.
+    """
+    import math
+    as_requis_cm2 = max(as_requis_cm2, 0.01)
+    largeur_utile = b_cm * 10 - 2 * (enrobage_mm + cadre_mm)          # mm
+    diametres = [10, 12, 14, 16, 20, 25] + ([32] if b_cm > 30 else [])
+    meilleur = None
+    for d in diametres:
+        n = max(2, math.ceil(as_requis_cm2 / section_bar(d)))
+        e = max(d, 25)
+        par_lit = max(int((largeur_utile + e) // (d + e)), 0)
+        if par_lit < 2:
+            continue
+        lits = math.ceil(n / par_lit)
+        if lits > 2:
+            continue
+        fournie = round(n * section_bar(d), 2)
+        exces = 100.0 * (fournie - as_requis_cm2) / as_requis_cm2
+        tranche = 0 if exces <= 10 else (1 if exces <= 25 else 2)
+        # un seul lit d'abord (plus simple à poser, bras de levier conservé), sauf excès d'acier > 25 %
+        cle = (tranche == 2, lits, tranche, n, -d)
+        if meilleur is None or cle < meilleur[0]:
+            meilleur = (cle, {"n": n, "diametre_mm": d, "as_fournie_cm2": fournie, "lits": lits,
+                              "ecart_cm2": round(fournie - as_requis_cm2, 2), "surdimensionnement_pct": round(exces, 1)})
+    if meilleur is None:   # section trop étroite pour loger l'acier : on le signale au lieu de tricher
+        d = 25
+        n = max(2, math.ceil(as_requis_cm2 / section_bar(d)))
+        c = {"n": n, "diametre_mm": d, "as_fournie_cm2": round(n * section_bar(d), 2), "lits": 3,
+             "ecart_cm2": None, "surdimensionnement_pct": None, "inconstructible": True}
+    else:
+        c = meilleur[1]
+    c["choix"] = f"{c['n']} HA{c['diametre_mm']}" + (f" ({c['lits']} lits)" if c.get("lits", 1) > 1 else "")
+    return c
+
+
 @app.post("/poutre")
 def poutre(inp: PoutreInput):
     h_m = inp.h_cm / 100.0
@@ -450,7 +492,7 @@ def poutre(inp: PoutreInput):
     # non-fragilité
     as_nf = non_fragilite(inp.b_cm, d_m, inp.fc28_mpa, inp.fe_mpa)
     as_final = max(res["as_cm2"], as_nf)
-    choix = choisir_barres(as_final, d_max_mm=32, n_max=8)
+    choix = choisir_barres_poutre(as_final, inp.b_cm, inp.enrobage_mm)
     # ELS (BAEL A.4.5) : en fissuration préjudiciable ou très préjudiciable, l'ELS gouverne
     # souvent ; As est augmenté jusqu'à σst ≤ σst,lim (et σbc ≤ 0,6 fc28 vérifié).
     ms = inp.ms_knm if inp.ms_knm else inp.mu_knm / 1.5
@@ -459,7 +501,7 @@ def poutre(inp: PoutreInput):
     pas = 0
     while not els.get("sigma_st_ok", True) and pas < 60:
         as_final = choix["as_fournie_cm2"] + 0.25
-        choix = choisir_barres(as_final, d_max_mm=32, n_max=8)
+        choix = choisir_barres_poutre(as_final, inp.b_cm, inp.enrobage_mm)
         els = flex_els(inp.b_cm, d_m, choix["as_fournie_cm2"], inp.fc28_mpa, inp.fe_mpa, ms, inp.fissuration)
         pas += 1
     res["as_elu_cm2"] = round(as_elu, 2)
