@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 import json
+import mimetypes
 import os
 import pathlib
 
@@ -19,6 +20,12 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+
+# Windows ne déclare pas toujours ces types : sans eux, les photos partiraient en
+# application/octet-stream et la feuille de style pourrait être refusée.
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("text/javascript", ".js")
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -141,7 +148,8 @@ async def proxy(service: str, path: str, request: Request):
         else:
             body = await request.body()
             headers = {"Content-Type": request.headers.get("content-type", "application/json")}
-            r = _HTTP.request(request.method, url, data=body, params=params, headers=headers, timeout=120)
+            delai = 1800 if service == "robot" else 120    # ouverture + analyse Robot : parfois longues
+            r = _HTTP.request(request.method, url, data=body, params=params, headers=headers, timeout=delai)
     except requests.RequestException as e:
         raise HTTPException(502, f"service {service} injoignable : {e}")
     content_type = r.headers.get("content-type", "application/octet-stream")

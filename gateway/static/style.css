@@ -135,7 +135,7 @@ nav.tabs button.active .glyphe .acier-l { stroke: var(--armature); }
 .cartouche .c-projet { grid-column: 1 / -1; border-top: 0; }
 .cartouche .c-indice { border-left: 1px solid var(--trait); text-align: center; }
 .cartouche .c-k { color: var(--graphite-3); font-size: 12px; }
-.cartouche .c-v { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cartouche .c-v { font-weight: 600; overflow-wrap: anywhere; }   /* nom complet, sur plusieurs lignes si besoin */
 .cartouche .c-projet .c-v { font-family: var(--police-titre); font-size: 14px; font-weight: 600; white-space: normal; line-height: 1.2; }
 .cartouche .c-indice .c-v { font-family: var(--police-titre); font-size: 18px; line-height: 1; color: var(--armature); }
 .cartouche .c-foi { grid-column: 1 / -1; color: var(--graphite-3); font-size: 12px; }
@@ -214,7 +214,7 @@ h1.module-title small {
 /* boutons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  height: 38px; padding: 0 18px;
+  min-height: 38px; padding: 8px 18px; line-height: 1.25; text-align: center;   /* libellé complet, retour à la ligne si besoin */
   border: 1px solid var(--graphite); border-radius: var(--rayon);
   background: var(--graphite); color: var(--sur-accent);
   font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none;
@@ -227,7 +227,7 @@ h1.module-title small {
 .btn.gold:hover { background: var(--armature-fonce); border-color: var(--armature-fonce); }
 .btn.ghost { background: transparent; color: var(--graphite); border-color: var(--graphite-3); }
 .btn.ghost:hover { background: var(--survol); border-color: var(--graphite); }
-.btn.small { height: 32px; padding: 0 13px; font-size: 13px; }
+.btn.small { min-height: 32px; padding: 6px 13px; font-size: 13px; }
 .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; align-items: center; }
 .actions-col { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
@@ -246,7 +246,7 @@ h1.module-title small {
 .result .kv .item .fil { flex: 1; border-bottom: 1px dotted var(--trait); transform: translateY(-4px); min-width: 12px; }
 .result .kv .item .v {
   font-family: var(--police-titre); font-size: 17px; font-weight: 600; text-align: right;
-  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere;   /* valeur complète, jamais tronquée */
 }
 .result .kv .item .v.ok { color: var(--verifie); }
 .result .kv .item .v.ko { color: var(--non-verifie); }
@@ -437,7 +437,7 @@ a:focus-visible, summary:focus-visible, input[type="checkbox"]:focus-visible, se
 .aide { margin: 4px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--graphite-2); }
 .result .kv .item { flex-wrap: wrap; }
 .result .kv .item .expl { flex-basis: 100%; font-size: 12px; color: var(--graphite-2); margin-top: 2px; line-height: 1.35; }
-.guide-verdict { padding: 10px 14px; margin: 0 0 16px; border-left: 3px solid var(--verifie); background: var(--fond-ok);
+.guide-verdict { color: var(--graphite); font-weight: 400; padding: 10px 14px; margin: 0 0 16px; border-left: 3px solid var(--verifie); background: var(--fond-ok);
   border-radius: 0 var(--rayon) var(--rayon) 0; font-size: 14px; line-height: 1.5; }
 .guide-verdict.ko { border-left-color: var(--non-verifie); background: var(--armature-voile); }
 .guide-verdict strong { color: var(--verifie); margin-right: 6px; }
@@ -454,3 +454,169 @@ html[data-niveau="guide"] details.brut,
 html[data-niveau="guide"] .raccourcis { display: none; }
 /* en mode Guidé, les champs s'empilent : l'aide reste lisible sans tasser les colonnes */
 html[data-niveau="guide"] .row { align-items: start; }
+
+/* ═══════════════════════════ style « Stade » ═══════════════════════════
+   Inspiré des grands stades marocains et du chantier : façade tissée en diagrid,
+   anneau de toiture en treillis, gradins rouges, pelouse, échafaudage au couchant.
+   Couleurs relevées sur les photos de référence ; contrastes vérifiés (WCAG 2.1).
+   Motifs redessinés en vecteur : aucune photo n'est embarquée. */
+:root[data-style="stade"] {
+  --beton: #f2f5f8; --beton-2: #e6ebf1; --feuille: #ffffff;
+  --graphite: #0f1f38; --graphite-2: #3c4a5e; --graphite-3: #4f5d70;
+  --trait: #c9d1db; --trait-feuille: #e7ecf1; --bord-champ: #6b7685;
+  --armature: #c4261d; --armature-fonce: #a11d16; --armature-voile: #c4261d14;   /* rouge des gradins */
+  --verifie: #2e7a2a; --non-verifie: #c4261d; --attention: #8a5a00;              /* vert pelouse */
+  --or: #f2b233; --champagne: #d8ccb2;                                            /* couchant, façade */
+  --sur-accent: #ffffff; --survol: #0f1f380d; --survol-leger: #0f1f3808;
+  --fond-ok: #2e7a2a14; --ombre: #0b214755;
+  --rail-fond: #0b2147;
+}
+:root[data-style="stade"][data-theme="dark"] {
+  --beton: #0a1428; --beton-2: #0e1a31; --feuille: #13213b;
+  --graphite: #e8edf4; --graphite-2: #b7c2d1; --graphite-3: #97a4b6;
+  --trait: #24344f; --trait-feuille: #1b2a45; --bord-champ: #7d8ba0;
+  --armature: #ff6f61; --armature-fonce: #ff8a7e; --armature-voile: #ff6f6124;
+  --verifie: #72d067; --non-verifie: #ff6f61; --attention: #f2b233;
+  --sur-accent: #0a1428; --survol: #ffffff12; --survol-leger: #ffffff08;
+  --fond-ok: #72d06717; --ombre: #000000aa; --rail-fond: #060e1f;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-style="stade"]:not([data-theme="light"]) {
+    --beton: #0a1428; --beton-2: #0e1a31; --feuille: #13213b;
+    --graphite: #e8edf4; --graphite-2: #b7c2d1; --graphite-3: #97a4b6;
+    --trait: #24344f; --trait-feuille: #1b2a45; --bord-champ: #7d8ba0;
+    --armature: #ff6f61; --armature-fonce: #ff8a7e; --armature-voile: #ff6f6124;
+    --verifie: #72d067; --non-verifie: #ff6f61; --attention: #f2b233;
+    --sur-accent: #0a1428; --survol: #ffffff12; --survol-leger: #ffffff08;
+    --fond-ok: #72d06717; --ombre: #000000aa; --rail-fond: #060e1f;
+    color-scheme: dark;
+  }
+}
+
+/* Rail = ciel du soir : il redéfinit les jetons qu'il transmet à son contenu. */
+:root[data-style="stade"] .rail {
+  --graphite: #f4efe4; --graphite-2: #cfc4ad; --graphite-3: #b9ae96;
+  --trait: #2a3f66; --bord-champ: #6d82a8; --feuille: #14305e;
+  --armature: #ff7a6b; --verifie: #72d067; --non-verifie: #ff7a6b;
+  --sur-accent: #0b2147; --survol: #ffffff14; --survol-leger: #ffffff0d;
+  background: var(--rail-fond); border-right-color: #00000040; color: var(--graphite);
+}
+:root[data-style="stade"] .marque-signe .acier,
+:root[data-style="stade"] nav.tabs button.active .glyphe .acier { fill: var(--or); }
+:root[data-style="stade"] nav.tabs button.active .glyphe .acier-l { stroke: var(--or); }
+:root[data-style="stade"] nav.tabs button.active { box-shadow: inset 0 0 0 1px #ffffff1f; }
+:root[data-style="stade"] nav.tabs button.active::before { background: var(--or); }
+:root[data-style="stade"] .cartouche { border-color: #ffffff33; }
+:root[data-style="stade"] .cartouche .c-indice .c-v { color: var(--or); }
+
+/* Signature : bande de façade tissée (diagrid), balayée par la lumière. */
+.facade { display: none; }
+:root[data-style="stade"] .facade {
+  display: block; position: relative; height: 44px; margin: -6px 0 16px; overflow: hidden;
+  --motif: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='22'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.3'%3E%3Cpath d='M2 11Q20 1.5 38 11Q20 20.5 2 11Z'/%3E%3Cpath d='M-18 0Q0-9.5 18 0Q0 9.5-18 0Z M22 0Q40-9.5 58 0Q40 9.5 22 0Z M-18 22Q0 12.5 18 22Q0 31.5-18 22Z M22 22Q40 12.5 58 22Q40 31.5 22 22Z'/%3E%3C/g%3E%3C/svg%3E");
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+:root[data-style="stade"] .facade::before,
+:root[data-style="stade"] .facade::after {
+  content: ""; position: absolute; inset: 0;
+  -webkit-mask-image: var(--motif); mask-image: var(--motif);
+  -webkit-mask-size: 40px 22px; mask-size: 40px 22px;
+}
+:root[data-style="stade"] .facade::before { background: var(--champagne); opacity: .38; }
+:root[data-style="stade"] .facade::after {
+  background: linear-gradient(100deg, transparent 38%, #ffe7a8 50%, transparent 62%) no-repeat;
+  background-size: 260% 100%; animation: soleil 9s ease-in-out infinite;
+}
+@keyframes soleil { 0% { background-position: 120% 0; } 60%, 100% { background-position: -20% 0; } }
+
+/* Titres posés sur l'anneau de toiture : membrures, montants, diagonales. */
+:root[data-style="stade"] h1.module-title small { border-left: 0; padding-left: 0; }
+:root[data-style="stade"] h1.module-title::after {
+  content: ""; display: block; width: min(360px, 70%); height: 10px; margin-top: 14px;
+  background: linear-gradient(90deg, var(--armature), var(--or) 55%, transparent);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10'%3E%3Cpath d='M0 .6H20M0 9.4H20M0 9.4L10 .6L20 9.4M10 .6V9.4' fill='none' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E");
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10'%3E%3Cpath d='M0 .6H20M0 9.4H20M0 9.4L10 .6L20 9.4M10 .6V9.4' fill='none' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E");
+  -webkit-mask-size: 20px 10px; mask-size: 20px 10px;
+}
+
+/* Calcul en cours : un échafaudage se monte, travée après travée. */
+:root[data-style="stade"] .spinner {
+  width: 30px; height: 16px; background: none; border-radius: 0; overflow: visible; margin-right: 10px;
+}
+:root[data-style="stade"] .spinner::after {
+  inset: 0; width: auto;
+  background:
+    repeating-linear-gradient(90deg, var(--or) 0 1.5px, transparent 1.5px 9.5px),
+    repeating-linear-gradient(0deg, var(--or) 0 1.5px, transparent 1.5px 5.25px),
+    linear-gradient(135deg, transparent 47%, var(--or) 47% 53%, transparent 53%);
+  animation: echafaudage 1.4s steps(4) infinite;
+}
+@keyframes echafaudage { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+/* Nuit de match : halo des projecteurs sur la zone de travail (thème sombre). */
+:root[data-style="stade"][data-theme="dark"] main { background: radial-gradient(ellipse 70% 260px at 55% -40px, #ffe7a81f, transparent 70%) no-repeat; }
+@media (prefers-color-scheme: dark) {
+  :root[data-style="stade"]:not([data-theme="light"]) main { background: radial-gradient(ellipse 70% 260px at 55% -40px, #ffe7a81f, transparent 70%) no-repeat; }
+}
+
+/* Verdict vérifié : tonte de la pelouse en bandes. */
+:root[data-style="stade"] .guide-verdict.ok {
+  background: repeating-linear-gradient(90deg, var(--fond-ok) 0 28px, transparent 28px 56px), var(--fond-ok);
+}
+
+/* chemin d'un .rtd (hors fenêtre de l'application) */
+.chemin-rtd { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
+.chemin-rtd[hidden] { display: none; }
+.chemin-rtd .field { flex: 1 1 280px; margin-bottom: 0; }
+.chemin-rtd .field:has(.erreur-champ) { margin-bottom: 28px; }
+
+.modele-xlsx { margin: 10px 0 0; }
+.modele-xlsx a { color: var(--graphite); font-weight: 600; }
+
+/* ───────── bandeau photo de l'accueil (style « Stade ») ─────────
+   Trois vues qui se succèdent en fondu avec un lent zoom (« Ken Burns »).
+   Images remplaçables : gateway/static/images (voir LISEZ-MOI.txt). */
+.bandeau-photos { display: none; }
+:root[data-style="stade"] .bandeau-photos {
+  display: flex; align-items: flex-end; position: relative; overflow: hidden;
+  height: 210px; margin: 0 0 28px; border-radius: 4px; background: var(--rail-fond);
+  box-shadow: 0 18px 40px -26px var(--ombre);
+}
+:root[data-style="stade"] .bandeau-photos .photo {
+  position: absolute; inset: 0; background-size: cover; background-repeat: no-repeat;
+  opacity: 0; transform-origin: 60% 50%;
+  animation: diaporama 21s ease-in-out infinite both;
+}
+:root[data-style="stade"] .bandeau-photos .p1 { background-image: url("images/stade-facade.webp"); background-position: 50% 55%; opacity: 1; }
+:root[data-style="stade"] .bandeau-photos .p2 { background-image: url("images/stade-tribunes.webp"); background-position: 50% 45%; animation-delay: 7s; }
+:root[data-style="stade"] .bandeau-photos .p3 { background-image: url("images/chantier-echafaudage.webp"); background-position: 50% 40%; animation-delay: 14s; }
+@keyframes diaporama {
+  0%   { opacity: 0; transform: scale(1.02); }
+  5%   { opacity: 1; }
+  33%  { opacity: 1; }
+  40%  { opacity: 0; transform: scale(1.12); }
+  100% { opacity: 0; transform: scale(1.12); }
+}
+/* voile de lecture : le texte reste lisible quelle que soit la photo */
+:root[data-style="stade"] .bandeau-photos::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, #060e1fe6 0%, #060e1f99 42%, #060e1f1a 78%),
+              linear-gradient(0deg, #060e1fb3 0%, transparent 55%);
+}
+:root[data-style="stade"] .bandeau-texte { position: relative; z-index: 1; padding: 0 28px 24px; max-width: 760px; color: #f4efe4; }
+:root[data-style="stade"] .bandeau-titre {
+  display: block; font-family: var(--police-titre); font-size: 28px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em;
+}
+:root[data-style="stade"] .bandeau-titre::after {   /* fil d'or, rappel de l'anneau de toiture */
+  content: ""; display: block; width: 72px; height: 3px; margin: 10px 0 9px; background: var(--or); border-radius: 2px;
+}
+:root[data-style="stade"] .bandeau-sous { display: block; font-size: 14px; color: #ded5c2; }
+@media (max-width: 760px) {
+  :root[data-style="stade"] .bandeau-photos { height: 160px; }
+  :root[data-style="stade"] .bandeau-titre { font-size: 22px; }
+}
+
+/* crédit du développeur, en pied du menu */
+.credit { margin: 10px 24px 0; padding-top: 10px; border-top: 1px solid var(--trait); font-size: 12px; line-height: 1.4; color: var(--graphite-2); }

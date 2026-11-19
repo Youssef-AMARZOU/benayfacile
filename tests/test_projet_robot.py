@@ -162,3 +162,77 @@ def test_modele_demo_seulement_sur_demande(monkeypatch):
     assert sans["mode"] == "indisponible" and "ossature" not in sans      # jamais de données d'exemple en silence
     avec = rs.model(demo=True)
     assert avec["mode"] == "simulation" and avec["ossature"]["resume"]["poteaux"] == 45
+
+
+def test_lecture_com_via_projet_ouvert(monkeypatch):
+    """Lecture d'un projet Robot ouvert : robot.Project (RobotOM), sans démarrer Robot."""
+    import robot_service as rs
+    projet = faux_projet()
+    projet.Name, projet.IsActive = "Résidence test", True
+    robot = NS(Name="Autodesk Robot", Project=projet)
+    appels = []
+    monkeypatch.setattr(rs, "connecter_robot", lambda lancer=False: appels.append(lancer) or robot)
+    m = rs.model()
+    assert m["mode"] == "robot" and m["nom"] == "Résidence test"
+    assert m["ossature"]["resume"]["poteaux"] == 2 and m["ossature"]["cas_elu"] == 7
+    assert "ELU" in m["combinaisons"]
+    assert appels[0] is False                     # la vérification ne lance jamais Robot
+
+
+def test_lecture_com_sans_projet_ouvert(monkeypatch):
+    import robot_service as rs
+    robot = NS(Name="Autodesk Robot", Project=NS(IsActive=False))
+    monkeypatch.setattr(rs, "connecter_robot", lambda lancer=False: robot)
+    m = rs.model()
+    assert m["mode"] == "indisponible" and "aucun projet" in m["notes"][0]
+
+
+def _robot_avec_fichier(resultats_disponibles):
+    """Faux Robot : Project.Open et CalcEngine.Calculate enregistrent leurs appels."""
+    appels = []
+    projet = faux_projet()
+    projet.Name, projet.IsActive = "Residence.rtd", True
+    projet.Open = lambda chemin: appels.append(("open", chemin))
+    projet.CalcEngine = NS(Calculate=lambda: appels.append(("calcul",)) or 0)
+    projet.Structure.Results = NS(Available=resultats_disponibles)
+    return NS(Name="Autodesk Robot", Project=projet), appels
+
+
+def test_ouvrir_rtd_lance_l_analyse_si_resultats_absents(tmp_path, monkeypatch):
+    import robot_service as rs
+    f = tmp_path / "Residence.rtd"; f.write_bytes(b"rtd")
+    robot, appels = _robot_avec_fichier(resultats_disponibles=False)
+    monkeypatch.setattr(rs, "connecter_robot", lambda lancer=False: robot)
+    m = rs.ouvrir(rs.OuvrirInput(chemin=str(f)))
+    assert m["mode"] == "robot" and m["ossature"]["resume"]["poteaux"] == 2
+    assert appels == [("open", str(f.resolve())), ("calcul",)]
+    assert m["notes"][0] == "Projet ouvert dans Robot : Residence.rtd."
+    assert robot.Visible == 1                         # Robot reste visible (licence, messages)
+
+
+def test_ouvrir_rtd_sans_recalcul_si_resultats_presents(tmp_path, monkeypatch):
+    import robot_service as rs
+    f = tmp_path / "Residence.rtd"; f.write_bytes(b"rtd")
+    robot, appels = _robot_avec_fichier(resultats_disponibles=True)
+    monkeypatch.setattr(rs, "connecter_robot", lambda lancer=False: robot)
+    rs.ouvrir(rs.OuvrirInput(chemin=str(f)))
+    assert appels == [("open", str(f.resolve()))]
+
+
+def test_ouvrir_refuse_un_mauvais_fichier(tmp_path, monkeypatch):
+    import robot_service as rs
+    monkeypatch.setattr(rs, "connecter_robot", lambda lancer=False: (_ for _ in ()).throw(AssertionError("Robot ne doit pas être appelé")))
+    autre = tmp_path / "plan.dxf"; autre.write_text("x")
+    for chemin, attendu in ((str(autre), "(.rtd)"), (str(tmp_path / "absent.rtd"), "introuvable")):
+        m = rs.ouvrir(rs.OuvrirInput(chemin=chemin))
+        assert m["mode"] == "indisponible" and attendu in m["notes"][0]
+
+
+def test_robot_absent_a_l_ouverture(tmp_path, monkeypatch):
+    import robot_service as rs
+    f = tmp_path / "Residence.rtd"; f.write_bytes(b"rtd")
+    def pas_de_robot(lancer=False):
+        raise OSError("Classe non enregistrée")
+    monkeypatch.setattr(rs, "connecter_robot", pas_de_robot)
+    m = rs.ouvrir(rs.OuvrirInput(chemin=str(f)))
+    assert m["mode"] == "indisponible" and "installé avec sa licence" in m["notes"][0]

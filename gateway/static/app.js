@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
-  project: { projet: '', client: '', site: '', indice: 'A' },   // projet de l'utilisateur, vierge au démarrage
+  project: { projet: '', client: '', site: '', indice: 'A', objet: '', architecte: '', controle: '', laboratoire: '', phase: 'Exécution' },   // projet de l'utilisateur, vierge au démarrage
   robot: null,
   sismique: null,
   poteaux: [], poutres: [], semelles_isolees: [], semelles_filantes: [], voiles: [],
@@ -185,7 +185,9 @@ function renderCartouche() {
 function synthesisPayload() {
   return {
     projet: state.project.projet, client: state.project.client, site: state.project.site,
-    indice: state.project.indice,
+    indice: state.project.indice, objet: state.project.objet, architecte: state.project.architecte,
+    controle: state.project.controle, laboratoire: state.project.laboratoire, phase: state.project.phase,
+    lot: state.lot || undefined,
     robot: state.robot || undefined, sismique: state.sismique || undefined,
     poteaux: state.poteaux, poutres: state.poutres,
     semelles_isolees: state.semelles_isolees, semelles_filantes: state.semelles_filantes,
@@ -259,13 +261,26 @@ function tabProjet() {
   const vue = { modele: null, lot: null, famille: 'poteaux', aRevoir: false };
   const fissOpts = [['peu_prejudiciable', 'Peu préjudiciable'], ['prejudiciable', 'Préjudiciable'], ['tres_prejudiciable', 'Très préjudiciable']];
   return {
-    html: `<h1 class="module-title">Projet Robot <small>Lecture du modèle Robot Structural Analysis et calcul de tous les éléments : poteaux, poutres, semelles, voiles (BAEL 91 rév. 99)</small></h1>
+    html: `<div class="bandeau-photos">
+  <div class="photo p1" aria-hidden="true"></div><div class="photo p2" aria-hidden="true"></div><div class="photo p3" aria-hidden="true"></div>
+  <div class="bandeau-texte"><span class="bandeau-titre">Du modèle Robot au plan de ferraillage</span>
+    <span class="bandeau-sous">Lecture du modèle, calcul BAEL 91 / RPS 2011, note de calcul, Excel et plans DXF</span></div>
+</div>
+<h1 class="module-title">Projet Robot <small>Lecture du modèle Robot Structural Analysis et calcul de tous les éléments : poteaux, poutres, semelles, voiles (BAEL 91 rév. 99)</small></h1>
 <div class="grid pile"><div class="card projet-commandes">
   <div class="etape">
     <h2>Modèle</h2>
-    <div class="actions"><button class="btn" id="rb-lire">Lire le modèle Robot</button>
-      <button class="btn ghost small" id="rb-demo">Essayer avec l'exemple R+4</button></div>
-    <div class="result" id="rb-modele"><p class="small">Ouvrez votre projet dans Robot et lancez l'analyse, puis lisez le modèle.</p></div>
+    <div class="actions"><button class="btn" id="rb-ouvrir">Ouvrir un fichier Robot (.rtd)</button>
+      <button class="btn ghost small" id="rb-xlsx-import">Importer un classeur Excel</button>
+      <button class="btn ghost small" id="rb-lire">Lire le projet déjà ouvert dans Robot</button>
+      <button class="btn ghost small" id="rb-demo">Essayer avec l'exemple R+4</button>
+      <input type="file" id="rb-xlsx-fichier" accept=".xlsx,.xlsm" hidden></div>
+    <p class="small modele-xlsx">Sans Robot : <a href="/api/robot/modele-excel" download="Modele_Benayfacile.xlsx">téléchargez le modèle Excel</a>, remplissez-le, puis importez-le.</p>
+    <div class="chemin-rtd" id="rb-chemin-zone" hidden>
+      ${field('rb-chemin', "Chemin du fichier Robot (.rtd)", '', 'text', 'any', 'C:\\Projets\\Residence.rtd')}
+      <button class="btn small" id="rb-chemin-ok">Ouvrir dans Robot</button>
+    </div>
+    <div class="result" id="rb-modele"><p class="small">Choisissez votre fichier Robot : Bénayfacile le fait ouvrir et calculer par Robot, puis lit tous les éléments. Robot Structural Analysis doit être installé sur ce poste.</p></div>
   </div>
   <div class="etape">
     <h2>Matériaux et sol</h2>
@@ -283,15 +298,29 @@ function tabProjet() {
 </div>
 <div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
     init() {
-      const lire = async (demo) => {
-        const el = $('rb-modele'); el.innerHTML = '<p class="small"><span class="spinner"></span>Lecture du modèle…</p>';
+      /* demo : exemple R+4 ; chemin : .rtd à faire ouvrir par Robot ; sinon : projet déjà ouvert dans Robot. */
+      const lire = async (demo, chemin = null, fichier = null) => {
+        const el = $('rb-modele');
+        effacerErreurs($('tab-projet'));
+        el.innerHTML = chemin
+          ? '<p class="small" role="status"><span class="spinner"></span>Ouverture du projet dans Robot et analyse… Cela peut prendre quelques minutes.</p>'
+          : '<p class="small" role="status"><span class="spinner"></span>Lecture du modèle…</p>';
+        let envoi = null;
+        if (fichier) { envoi = new FormData(); envoi.append('fichier', fichier); }
         try {
-          const r = await api('/api/robot/model' + (demo ? '?demo=true' : ''));
+          const r = envoi ? await api('/api/robot/import-excel', { method: 'POST', body: envoi })
+            : chemin ? await api('/api/robot/ouvrir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chemin }) })
+            : await api('/api/robot/model' + (demo ? '?demo=true' : ''));
           if (r.mode === 'indisponible') {
             vue.modele = null; vue.lot = null;
             $('rb-calc').disabled = true; $('rb-add').disabled = true; $('rb-xlsx').disabled = true; $('rb-dxf').disabled = true;
             el.innerHTML = notes(r.notes) + `<p class="small">Pour découvrir Bénayfacile sans Robot, utilisez « Essayer avec l'exemple R+4 ».</p>`;
             return;
+          }
+          if (!demo && r.nom && !state.project.projet) {   // projet sans titre : reprendre le nom du fichier Robot
+            state.project.projet = r.nom.replace(/\.rtd$/i, '');
+            const f = $('sy-projet'); if (f) f.value = state.project.projet;
+            renderCartouche();
           }
           if (demo) {   // l'exemple apporte sa propre identité de projet, clairement marquée
             Object.assign(state.project, { projet: 'Exemple — immeuble R+4', client: 'Démonstration', site: 'Casablanca', indice: 'A' });
@@ -303,12 +332,12 @@ function tabProjet() {
           state.robot = r; renderSynthesis();
           const o = r.ossature;
           if (!o) { el.innerHTML = `<p class="warn">Le modèle ne contient pas d'ossature lisible.</p>` + notes(r.notes); return; }
-          const source = r.mode === 'robot' ? 'Robot (lecture COM)' : 'Exemple de démonstration R+4';
+          const source = { robot: 'Robot (lecture COM)', excel: 'Classeur Excel' }[r.mode] || 'Exemple de démonstration R+4';
           el.innerHTML = kv([
             ['Source', source], ['Niveaux', o.niveaux.join(', ')],
             ['Poteaux', o.resume.poteaux, true], ['Poutres', o.resume.poutres, true],
             ['Semelles', o.resume.semelles, true], ['Voiles', o.resume.voiles, true],
-          ]) + notes(o.remarques) + `<details><summary>Hypothèses de la ${r.mode === 'robot' ? 'lecture' : 'simulation'}</summary>${notes(o.hypotheses)}</details>`;
+          ]) + notes(o.remarques) + `<details><summary>Hypothèses ${{ robot: 'de la lecture', excel: "de l'import" }[r.mode] || 'de la simulation'}</summary>${notes(o.hypotheses)}</details>`;
           $('rb-calc').disabled = false; $('rb-add').disabled = true;
           const total = o.resume.poteaux + o.resume.poutres + o.resume.semelles + o.resume.voiles;
           $('rb-res').innerHTML = vide('projet', `${total} éléments prêts. Lancez « Calculer tout le modèle ».`);
@@ -316,6 +345,27 @@ function tabProjet() {
       };
       $('rb-lire').addEventListener('click', () => lire(false));
       $('rb-demo').addEventListener('click', () => lire(true));
+      $('rb-xlsx-import').addEventListener('click', () => $('rb-xlsx-fichier').click());
+      $('rb-xlsx-fichier').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) lire(false, null, f);
+        e.target.value = '';   // permet de réimporter le même fichier après correction
+      });
+      // Ouvrir un .rtd : boîte de dialogue Windows dans la fenêtre de l'application ;
+      // dans un navigateur (pas d'accès au vrai chemin du fichier), saisie du chemin.
+      $('rb-ouvrir').addEventListener('click', async () => {
+        const natif = window.pywebview && window.pywebview.api && window.pywebview.api.choisir_projet_robot;
+        if (!natif) { $('rb-chemin-zone').hidden = false; $('rb-chemin').focus(); return; }
+        const chemin = await window.pywebview.api.choisir_projet_robot();
+        if (chemin) lire(false, chemin);
+      });
+      const ouvrirChemin = () => {
+        const chemin = $('rb-chemin').value.trim().replace(/^"(.*)"$/, '$1');
+        if (!chemin) { afficherErreur($('rb-modele'), new ErreurApi('', [{ cle: 'chemin', message: 'est obligatoire' }]), { chemin: 'rb-chemin' }); return; }
+        lire(false, chemin);
+      };
+      $('rb-chemin-ok').addEventListener('click', ouvrirChemin);
+      $('rb-chemin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ouvrirChemin(); } });
 
       $('rb-calc').addEventListener('click', async () => {
         const o = vue.modele?.ossature; if (!o) return;
@@ -324,6 +374,7 @@ function tabProjet() {
           exiger(CH_PROJET, ['sigma_sol_bar']);
           const payload = { poteaux: o.poteaux, poutres: o.poutres, semelles: o.semelles, voiles: o.voiles,
             materiaux: { fc28_mpa: +$('rb-fc').value, fe_mpa: +$('rb-fe').value, sigma_sol_bar: +$('rb-sol').value, fissuration: $('rb-fis').value } };
+          vue.compte = false;
           vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
           dessiner();
@@ -343,6 +394,7 @@ function tabProjet() {
           }));
           n += state[f.synthese].length;
         }
+        state.lot = vue.lot;
         renderSynthesis();
         toast(`${n} éléments envoyés à la synthèse.`);
       });
@@ -403,6 +455,7 @@ function tabProjet() {
           </div>
           <div class="onglets">${onglets}<label class="filtre"><input type="checkbox" id="rb-filtre" ${vue.aRevoir ? 'checked' : ''}> À revoir seulement</label></div>
           ${lignes.length ? `<div class="table-defile"><table class="lot">${tete}${corps}</table></div>` : '<p class="small" style="padding:18px 0">Aucun élément à revoir dans cette famille.</p>'}`;
+        if (!vue.compte) { compter($('rb-res')); vue.compte = true; }
       }
     }
   };
@@ -510,7 +563,7 @@ ${field('s-amort', "Amortissement (%)", 5.0)}
             ['T (s)', r.T_s], ['D', r.D], ['F — effort à la base (kN)', r.F_base_kn, true], ['Ft (kN)', r.Ft_kn], ['ω (modes supérieurs)', r.omega_modes_superieurs],
           ]) + notes(r.hypotheses) + (r.Fn?.length ? `<h3>Répartition verticale</h3><table><tr><th>Niveau</th><th>Wi</th><th>hn</th><th>Fn (kN)</th></tr>${r.Fn.map(n => `<tr><td>${esc(n.niveau)}</td><td>${n.Wn_kn}</td><td>${n.hn_m}</td><td>${n.Fn_kn}</td></tr>`).join('')}</table>` : '') + renderRaw(r);
           $('s-add').disabled = false;
-          $('s-add').onclick = () => { state.sismique = r; renderSynthesis(); toast('Vérification sismique ajoutée à la synthèse.'); };
+          $('s-add').onclick = () => { state.sismique = { ...r, donnees: payload }; renderSynthesis(); toast('Vérification sismique ajoutée à la synthèse.'); };
         } catch (e) { afficherErreur(resEl, e, CH_SISMIQUE); }
       });
     }
@@ -644,6 +697,9 @@ function tabSynthese() {
 <div class="grid"><div class="card"><h2>Projet</h2>
 ${field('sy-projet', "Projet", state.project.projet, 'text', 'any', 'Résidence Al Amal, R+3')}
 ${row2(field('sy-client', "Client", state.project.client, 'text', 'any', "Maître d'ouvrage"), field('sy-site', "Site", state.project.site, 'text', 'any', 'Ville, quartier'))}
+${field('sy-objet', "Objet", state.project.objet, 'text', 'any', "Construction d'un immeuble R+3 à usage d'habitation")}
+${row2(field('sy-architecte', "Architecte", state.project.architecte, 'text'), field('sy-controle', "Bureau de contrôle", state.project.controle, 'text'))}
+${row2(field('sy-laboratoire', "Laboratoire (étude géotechnique)", state.project.laboratoire, 'text'), select('sy-phase', "Phase", [['Esquisse', 'Esquisse'], ['APS', 'APS'], ['APD', 'APD'], ['Autorisation de construire', 'Autorisation de construire'], ['DCE', 'DCE'], ['Exécution', 'Exécution']], state.project.phase))}
 ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="field"><label>&nbsp;</label><button class="btn small ghost" id="sy-loaddemo">Charger l'exemple R+4</button></div>`)}
 <h2 class="sous">Éléments collectés</h2>
 <ul class="items-list" id="synthesis-items"></ul>
@@ -654,13 +710,15 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
   <a class="btn ghost small" id="sy-dxf-link" style="display:none; text-align:center">Télécharger le DXF</a>
 </div>
 </div>
-<div class="card"><h2>Aperçu</h2><div class="result" id="sy-log">${vide('synthese', 'La note assemble la page de garde, les références normatives, les hypothèses, le modèle Robot, la vérification sismique, chaque élément calculé, un audit arithmétique ligne à ligne et les alertes.')}</div></div></div>`,
+<div class="card"><h2>Aperçu</h2><div class="result" id="sy-log">${vide('synthese', 'La note suit la présentation d’un bureau d’études : page de garde et intervenants, règlements, hypothèses, étude sismique, ferraillage par type avec un exemple de calcul détaillé, quantités, conclusion et réserves.')}</div></div></div>`,
     init() {
       // synchroniser les champs projet
       $('sy-projet').addEventListener('input', e => { state.project.projet = e.target.value; renderCartouche(); });
       $('sy-client').addEventListener('input', e => { state.project.client = e.target.value; renderCartouche(); });
       $('sy-site').addEventListener('input', e => state.project.site = e.target.value);
       $('sy-indice').addEventListener('input', e => { state.project.indice = e.target.value; renderCartouche(); });
+      for (const k of ['objet', 'architecte', 'controle', 'laboratoire']) $('sy-' + k).addEventListener('input', e => { state.project[k] = e.target.value; });
+      $('sy-phase').addEventListener('change', e => { state.project.phase = e.target.value; });
       $('sy-loaddemo').addEventListener('click', loadDemo);
       renderSynthesis();
       const log = (msg) => { $('sy-log').innerHTML = `<p class="note">${esc(msg)}</p>`; };
@@ -746,7 +804,7 @@ async function loadDemo() {
     state.robot = robot;
     const sisPayload = { ...demo.sismique };
     const rSism = await api('/api/engine/sismique', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sisPayload) });
-    state.sismique = rSism;
+    state.sismique = { ...rSism, donnees: sisPayload };
     state.poteaux = []; state.poutres = []; state.semelles_isolees = []; state.semelles_filantes = []; state.voiles = [];
     for (const p of demo.poteaux) state.poteaux.push(await api('/api/engine/poteau', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
     for (const p of demo.poutres) state.poutres.push(await api('/api/engine/poutre', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
@@ -763,8 +821,23 @@ const builders = { projet: tabProjet, poteau: tabPoteau, sismique: tabSismique, 
   semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile,
   synthese: tabSynthese, bureau: tabBureau };
 
+/* Les totaux montent de 0 à leur valeur quand les résultats arrivent (sauf « animations réduites »). */
+function compter(racine) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  racine.querySelectorAll('.bilan-n').forEach(el => {
+    const fin = +el.textContent; if (!fin) return;
+    const t0 = performance.now(), duree = 700;
+    const pas = (t) => {
+      const p = Math.min(1, (t - t0) / duree), e = 1 - (1 - p) ** 3;
+      el.textContent = String(Math.round(fin * e));
+      if (p < 1) requestAnimationFrame(pas);
+    };
+    el.textContent = '0'; requestAnimationFrame(pas);
+  });
+}
+
 /* ---------- préférences d'affichage (mémorisées sur ce poste) ---------- */
-const PREFS_DEFAUT = { theme: 'auto', taille: '1', niveau: 'guide', langue: 'fr' };
+const PREFS_DEFAUT = { style: 'stade', theme: 'auto', taille: '1', niveau: 'guide', langue: 'fr' };
 function lirePrefs() {
   try { return { ...PREFS_DEFAUT, ...JSON.parse(localStorage.getItem('benayfacile.prefs') || '{}') }; }
   catch { return { ...PREFS_DEFAUT }; }
@@ -773,6 +846,7 @@ function ecrirePrefs(p) { try { localStorage.setItem('benayfacile.prefs', JSON.s
 const prefs = lirePrefs();
 function appliquerPrefs() {
   const r = document.documentElement;
+  r.dataset.style = prefs.style === 'plan' ? 'plan' : 'stade';
   r.dataset.niveau = prefs.niveau === 'expert' ? 'expert' : 'guide';
   definirLangue(prefs.langue);
   if (prefs.theme === 'auto') r.removeAttribute('data-theme');

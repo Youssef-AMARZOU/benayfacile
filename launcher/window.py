@@ -47,6 +47,28 @@ class Coquille:
         raise NotImplementedError
 
 
+class PontFenetre:
+    """Fonctions natives offertes à la page (window.pywebview.api.*), dans la fenêtre native.
+
+    Sert aux boîtes de dialogue Windows, que la page web ne peut pas ouvrir elle-même
+    avec un vrai chemin de fichier (nécessaire pour faire ouvrir le .rtd par Robot)."""
+
+    def __init__(self) -> None:
+        self._fenetre = None    # « _ » : pywebview n'expose pas (et ne parcourt pas) les attributs privés
+
+    def choisir_projet_robot(self) -> Optional[str]:
+        import webview
+        if self._fenetre is None:
+            return None
+        ouvrir = webview.FileDialog.OPEN if hasattr(webview, "FileDialog") else webview.OPEN_DIALOG
+        choix = self._fenetre.create_file_dialog(
+            ouvrir, allow_multiple=False,
+            file_types=("Projets Robot (*.rtd)", "Tous les fichiers (*.*)"))
+        if not choix:
+            return None
+        return str(choix[0] if isinstance(choix, (list, tuple)) else choix)
+
+
 class FenetreNative(Coquille):
     nom = "fenêtre native (WebView2)"
 
@@ -63,9 +85,11 @@ class FenetreNative(Coquille):
         webview.settings["ALLOW_DOWNLOADS"] = True            # DXF / notes : boîte « Enregistrer sous »
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
         erreur: List[BaseException] = []
+        api = PontFenetre()
 
         fenetre = webview.create_window(TITRE, html=ECRAN_DEMARRAGE, width=1380, height=880,
-                                        min_size=(1024, 680), text_select=True)
+                                        min_size=(1024, 680), text_select=True, js_api=api)
+        api._fenetre = fenetre
 
         def apres_affichage(win):
             try:

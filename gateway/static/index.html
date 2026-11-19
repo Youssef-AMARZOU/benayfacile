@@ -22,6 +22,7 @@
         <div class="marque-normes">BAEL 91 &nbsp;/&nbsp; RPS 2011</div>
       </div>
     </div>
+    <div class="facade" aria-hidden="true"></div>
     <nav class="tabs" id="tabs" aria-label="Modules de calcul"></nav>
     <div class="cartouche" id="cartouche"></div>
     <details class="reglages" id="reglages">
@@ -41,6 +42,13 @@
         </div>
         <p class="raccourcis">Entrée : calculer. Alt + 1 à 9 : changer de module.</p>
       </div>
+      <div class="reglage" role="group" aria-labelledby="lbl-style">
+        <span id="lbl-style">Style</span>
+        <div class="segments" data-pref="style">
+          <button type="button" data-val="stade">Stade</button>
+          <button type="button" data-val="plan">Plan</button>
+        </div>
+      </div>
       <div class="reglage" role="group" aria-labelledby="lbl-theme">
         <span id="lbl-theme">Thème</span>
         <div class="segments" data-pref="theme">
@@ -59,6 +67,7 @@
       </div>
     </details>
     <div class="health" id="health" aria-live="polite">vérification des services…</div>
+    <p class="credit">Développé par M. Youssef AMARZOU — Digital &amp; AI Engineer</p>
   </aside>
   <main id="main" tabindex="-1"></main>
 </div>

@@ -47,6 +47,7 @@ const AIDE = {
   's-tmeth': "Formule de la période propre, ou « T manuelle » pour reprendre la période calculée par Robot.",
   's-tman': "Période fondamentale lue dans l'analyse modale de Robot.",
   's-amort': "5 % pour le béton armé.",
+  'rb-chemin': "Chemin complet du fichier, par exemple copié depuis l'Explorateur (Maj + clic droit, « Copier en tant que chemin d'accès »).",
 };
 function aideChamp(id) {
   if (AIDE[id]) return AIDE[id];

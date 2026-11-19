@@ -10,11 +10,13 @@ import json
 import pathlib
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from robot_ossature import extraire_ossature_com, ossature_simulation
+from import_excel import creer_modele, lire_classeur
 
 HERE = pathlib.Path(__file__).resolve().parent
 # BNAY_DATA : dossier de données inscriptible (fixé par le lanceur .exe)
@@ -25,14 +27,51 @@ app = FastAPI(title="Bénayfacile — Service Robot", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
-def robot_disponible() -> tuple[bool, Optional[str]]:
-    """True si Robot est accessible via COM (message d'erreur sinon)."""
+def connecter_robot(lancer: bool = False):
+    """Instance de Robot déjà ouverte par l'utilisateur.
+
+    GetActiveObject ne lance jamais Robot. Dispatch, lui, démarrerait un Robot
+    invisible s'il n'est pas ouvert : on ne l'utilise qu'en secours (lancer=True),
+    pour les installations où Robot ne s'inscrit pas dans la table des objets actifs.
+    """
+    import win32com.client  # type: ignore
+    try:   # les requêtes FastAPI tournent dans des fils de travail : COM doit y être initialisé
+        import pythoncom  # type: ignore
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
     try:
-        import win32com.client  # type: ignore
-        robot = win32com.client.Dispatch("Robot.Application")
+        return win32com.client.GetActiveObject("Robot.Application")
+    except Exception:
+        if not lancer:
+            raise
+    try:   # bibliothèque de types : donne accès aux constantes RobotOM
+        return win32com.client.gencache.EnsureDispatch("Robot.Application")
+    except Exception:
+        return win32com.client.Dispatch("Robot.Application")
+
+
+def processus_robot_ouvert() -> bool:
+    """Un robot.exe tourne-t-il sur ce poste ? (Windows uniquement)"""
+    import subprocess
+    try:
+        sortie = subprocess.run(["tasklist", "/FI", "IMAGENAME eq robot.exe", "/NH"], capture_output=True,
+                                text=True, timeout=5, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        return "robot.exe" in sortie.lower()
+    except Exception:
+        return False
+
+
+def robot_disponible() -> tuple[bool, Optional[str]]:
+    """True si un Robot est ouvert, sans jamais en démarrer un : connexion directe, ou
+    processus robot.exe présent (Robot non inscrit dans la table des objets actifs)."""
+    try:
+        robot = connecter_robot(lancer=False)
         _ = robot.Name
         return True, None
-    except Exception as e:  # Robot non installé / non lancé / version incompatibilisée
+    except Exception as e:
+        if processus_robot_ouvert():
+            return True, None          # la lecture passera par Dispatch, qui se rattachera à ce Robot
         return False, str(e)
 
 
@@ -67,51 +106,12 @@ def modele_simulation() -> dict:
 
 
 def extraire_com(cas_elu: Optional[int] = None, cas_els: Optional[int] = None) -> dict:
-    import win32com.client  # type: ignore
-    try:   # bibliothèque de types : donne accès aux constantes RobotOM
-        robot = win32com.client.gencache.EnsureDispatch("Robot.Application")
-    except Exception:
-        robot = win32com.client.Dispatch("Robot.Application")
-    projet = robot.GetCurrentProject()
-    if projet is None:
-        # tenter de prendre le projet actif
-        projet = robot.Project
-    if projet is None:
-        raise RuntimeError("Aucun projet Robot ouvert.")
-    om = projet  # Project OM
-    nom = getattr(projet, "Name", "Projet Robot")
-    # Structure
-    n_elements = {}
-    try:
-        struct = om.Structure
-        n_elements["nodes"] = struct.Nodes.Count
-        n_elements["bars"] = struct.Bars.Count
-        n_elements["panels"] = struct.Panels.Count
-    except Exception as e:
-        n_elements["erreur_structure"] = str(e)
-    # Cas de charge
-    cas = []
-    try:
-        for i in range(om.Cases.Count):
-            c = om.Cases[i + 1]
-            cas.append({"nom": getattr(c, "Name", f"cas{i+1}"), "type": str(getattr(c, "Type", ""))})
-    except Exception as e:
-        cas.append({"erreur": str(e)})
-    # Combinaisons
-    combs = []
-    try:
-        for i in range(om.Combinations.Count):
-            cb = om.Combinations[i + 1]
-            combs.append(getattr(cb, "Name", f"comb{i+1}"))
-    except Exception:
-        pass
-    # Modal analysis : périodes
-    periods = []
-    try:
-        for i in range(om.Analyses.Count):
-            pass
-    except Exception:
-        periods = []
+    robot = connecter_robot(lancer=True)
+    projet = robot.Project                       # RobotOM : le projet ouvert dans Robot
+    if projet is None or not getattr(projet, "IsActive", True):
+        raise RuntimeError("aucun projet n'est ouvert dans Robot")
+    nom = getattr(projet, "Name", "") or "Projet Robot"
+    periods: list = []
     notes = ["Extraction COM réussie."]
     try:
         ossature = extraire_ossature_com(projet, cas_elu, cas_els)
@@ -122,9 +122,9 @@ def extraire_com(cas_elu: Optional[int] = None, cas_els: Optional[int] = None) -
     return {
         "nom": nom,
         "nb_niveaux": len(ossature["niveaux"]) if ossature else None,
-        "elements": ossature["resume"] if ossature else n_elements,
-        "cas_de_charge": cas,
-        "combinaisons": combs,
+        "elements": ossature["resume"] if ossature else {},
+        "cas_de_charge": (ossature or {}).get("cas", []),
+        "combinaisons": [c["nom"] for c in (ossature or {}).get("cas", [])],
         "modal": {"T1_s": periods[0] if periods else None},
         "ossature": ossature,
         "notes": notes,
@@ -136,6 +136,43 @@ def health():
     ok, err = robot_disponible()
     return {"service": "robot", "status": "ok", "robot_com_disponible": ok,
             "detail": err if err else "Robot pilotable via COM", "mode_defaut": "simulation si COM indisponible"}
+
+
+class OuvrirInput(BaseModel):
+    chemin: str                     # fichier .rtd choisi par l'utilisateur
+    calculer: bool = True           # lancer l'analyse si les résultats manquent
+    cas_elu: Optional[int] = None
+    cas_els: Optional[int] = None
+
+
+def ouvrir_projet(chemin: str, calculer: bool = True) -> dict:
+    """Ouvre un .rtd dans Robot (démarré au besoin, visible), puis lance l'analyse si
+    les résultats ne sont pas disponibles. Le format .rtd est propriétaire : seul
+    Robot sait le lire, d'où le passage par son API."""
+    import os
+    f = pathlib.Path(chemin)
+    if f.suffix.lower() != ".rtd":
+        raise ValueError("choisissez un fichier de projet Robot (.rtd)")
+    if not f.is_file():
+        raise ValueError(f"fichier introuvable : {chemin}")
+    robot = connecter_robot(lancer=True)
+    for attr in ("Visible", "Interactive"):   # Robot visible : licence, messages et calcul restent sous les yeux
+        try:
+            setattr(robot, attr, 1)
+        except Exception:
+            pass
+    projet = robot.Project
+    projet.Open(os.fspath(f.resolve()))
+    etapes = [f"Projet ouvert dans Robot : {f.name}."]
+    if calculer:
+        try:
+            disponibles = bool(projet.Structure.Results.Available)
+        except Exception:
+            disponibles = False
+        if not disponibles:
+            projet.CalcEngine.Calculate()
+            etapes.append("Analyse lancée dans Robot (résultats absents du fichier).")
+    return {"etapes": etapes}
 
 
 class ExtractInput(BaseModel):
@@ -169,6 +206,57 @@ def model(demo: bool = False):
         return {"mode": "indisponible", "robot_com": {"disponible": True, "erreur_extraction": str(e)},
                 "notes": [f"Robot est ouvert mais le modèle n'a pas pu être lu : {e}. "
                           "Vérifiez qu'un projet est ouvert et que l'analyse a été lancée."]}
+
+
+@app.post("/ouvrir")
+def ouvrir(inp: OuvrirInput):
+    """Ouvre le .rtd choisi dans Bénayfacile, calcule si nécessaire, puis lit le modèle."""
+    try:
+        etapes = ouvrir_projet(inp.chemin, inp.calculer)["etapes"]
+    except ValueError as e:
+        return {"mode": "indisponible", "notes": [f"Ouverture impossible : {e}."]}
+    except Exception as e:
+        return {"mode": "indisponible", "robot_com": {"erreur": str(e)},
+                "notes": [f"Robot n'a pas pu ouvrir ce projet : {e}. Vérifiez que Robot Structural Analysis "
+                          "est installé avec sa licence sur ce poste."]}
+    try:
+        m = extraire_com(inp.cas_elu, inp.cas_els)
+        m["mode"] = "robot"
+        m["robot_com"] = {"disponible": True}
+        m["notes"] = etapes + m.get("notes", [])
+        return m
+    except Exception as e:
+        return {"mode": "indisponible", "robot_com": {"erreur_extraction": str(e)},
+                "notes": etapes + [f"Le projet est ouvert mais n'a pas pu être lu : {e}."]}
+
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+TAILLE_MAX = 10 * 1024 * 1024
+
+
+@app.get("/modele-excel")
+def modele_excel():
+    """Classeur vide à remplir (poteaux, poutres, semelles, voiles, trame)."""
+    return Response(creer_modele(), media_type=XLSX,
+                    headers={"Content-Disposition": 'attachment; filename="Modele_Benayfacile.xlsx"'})
+
+
+@app.post("/import-excel")
+async def import_excel(fichier: UploadFile = File(...)):
+    """Modèle importé d'un classeur Excel : même format que la lecture Robot."""
+    nom = pathlib.Path(fichier.filename or "classeur.xlsx").name
+    octets = await fichier.read(TAILLE_MAX + 1)
+    if len(octets) > TAILLE_MAX:
+        return {"mode": "indisponible", "notes": ["Import impossible : fichier trop volumineux (10 Mo au plus)."]}
+    if not nom.lower().endswith((".xlsx", ".xlsm")):
+        return {"mode": "indisponible", "notes": ["Import impossible : choisissez un classeur Excel (.xlsx)."]}
+    try:
+        oss = lire_classeur(octets)
+    except ValueError as e:
+        return {"mode": "indisponible", "notes": [f"Import impossible : {e}."]}
+    return {"mode": "excel", "nom": pathlib.Path(nom).stem, "ossature": oss,
+            "nb_niveaux": len(oss["niveaux"]), "elements": oss["resume"],
+            "notes": [f"Classeur importé : {nom}."] + oss["remarques"]}
 
 
 @app.post("/extract")
