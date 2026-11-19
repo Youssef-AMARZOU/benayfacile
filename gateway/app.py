@@ -99,8 +99,8 @@ async def bureau_put(request: Request):
 def demo():
     """Scénario de démonstration R+4 (identique à la simulation Robot)."""
     return {
-        "projet": "Immeuble R+4 — Casablanca",
-        "client": "SARL Exemple",
+        "projet": "Exemple — immeuble R+4",
+        "client": "Démonstration",
         "site": "Casablanca, Maroc",
         "robot": {"simuler": True},
         "sismique": {"hauteur_m": 15.0, "longueur_contreventement_m": 12.0,

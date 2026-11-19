@@ -47,7 +47,7 @@ def modele_simulation() -> dict:
         {"nom": "Acrotère", "altitude_m": 15.0, "w_kn": 180},
     ]
     return {
-        "nom": "Immeuble R+4 — Casablanca (modèles de démonstration Bénayfacile)",
+        "nom": "Exemple de démonstration — immeuble R+4",
         "nb_niveaux": 6,
         "plan": {"trame_x_m": [0, 6, 12], "trame_y_m": [0, 5, 10], "nb_poteaux": 9},
         "elements": {"poteaux": 9, "poutres": 12, "dalles": 10, "voiles": 2},
@@ -146,23 +146,29 @@ class ExtractInput(BaseModel):
 
 
 @app.get("/model")
-def model():
-    ok, err = robot_disponible()
-    if not ok:
+def model(demo: bool = False):
+    """Modèle du projet ouvert dans Robot. Le bâtiment de démonstration n'est renvoyé
+    que sur demande explicite (?demo=true) : un projet réel ne doit jamais être
+    remplacé en silence par des données d'exemple."""
+    if demo:
         m = modele_simulation()
         m["mode"] = "simulation"
-        m["robot_com"] = {"disponible": False, "erreur": err}
+        m["robot_com"] = {"disponible": None, "demande": "démonstration"}
         return m
+    ok, err = robot_disponible()
+    if not ok:
+        return {"mode": "indisponible", "robot_com": {"disponible": False, "erreur": err},
+                "notes": ["Robot Structural Analysis n'est pas détecté. Ouvrez votre projet dans Robot, "
+                          "lancez l'analyse, puis réessayez."]}
     try:
         m = extraire_com()
         m["mode"] = "robot"
         m["robot_com"] = {"disponible": True}
         return m
     except Exception as e:
-        m = modele_simulation()
-        m["mode"] = "simulation"
-        m["robot_com"] = {"disponible": True, "erreur_extraction": str(e)}
-        return m
+        return {"mode": "indisponible", "robot_com": {"disponible": True, "erreur_extraction": str(e)},
+                "notes": [f"Robot est ouvert mais le modèle n'a pas pu être lu : {e}. "
+                          "Vérifiez qu'un projet est ouvert et que l'analyse a été lancée."]}
 
 
 @app.post("/extract")

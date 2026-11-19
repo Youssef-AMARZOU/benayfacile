@@ -148,3 +148,17 @@ def test_poteau_section_trop_petite_est_signalee():
     r = e.poteau(e.PoteauInput(a_cm=20, b_cm=20, lf_m=2.1, nu_kn=4000))
     assert r["section_suffisante"] is False and "A.8.1,22" in r["warn"]
     assert e.poteau(e.PoteauInput(a_cm=40, b_cm=40, lf_m=2.1, nu_kn=1700))["warn"] is None
+
+
+def test_lot_erreurs_de_saisie_en_clair():
+    r = e.lot(e.LotInput(poutres=[{"id": "B1", "nom": "B1", "b_cm": 5, "h_cm": 50, "mu_knm": 100}]))
+    assert r["poutres"][0]["problemes"] == ["b_cm doit être supérieur à 10"]
+
+
+def test_modele_demo_seulement_sur_demande(monkeypatch):
+    import robot_service as rs
+    monkeypatch.setattr(rs, "robot_disponible", lambda: (False, "Robot absent"))
+    sans = rs.model()
+    assert sans["mode"] == "indisponible" and "ossature" not in sans      # jamais de données d'exemple en silence
+    avec = rs.model(demo=True)
+    assert avec["mode"] == "simulation" and avec["ossature"]["resume"]["poteaux"] == 45

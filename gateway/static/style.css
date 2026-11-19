@@ -3,20 +3,28 @@
    Béton (fond), graphite (trait), rouge armature (seul accent : actions et aciers). */
 
 :root {
+  /* Contrastes vérifiés (WCAG 2.1) : texte ≥ 4,5 sur béton, rail et feuille ; bords de champ ≥ 3. */
   --beton: #dfe0dc;        /* fond de travail : béton banché */
-  --beton-2: #d3d5d0;      /* rail, séparateurs */
+  --beton-2: #dadcd6;      /* rail, séparateurs */
   --feuille: #fbfbf9;      /* feuille de calcul */
   --graphite: #1e2730;     /* trait principal, texte */
-  --graphite-2: #4a5560;   /* texte secondaire */
-  --graphite-3: #7d8790;   /* légendes, unités */
-  --trait: #b9bdb7;        /* traits fins */
+  --graphite-2: #454f59;   /* texte secondaire */
+  --graphite-3: #535c65;   /* légendes, unités */
+  --trait: #b9bdb7;        /* traits fins (décor) */
   --trait-feuille: #e3e4df;
-  --armature: #b8321f;     /* rouge armature : accent unique */
-  --armature-fonce: #962817;
+  --bord-champ: #6f7770;   /* contour des champs de saisie */
+  --armature: #b3301d;     /* rouge armature : accent unique */
+  --armature-fonce: #922615;
   --armature-voile: #b8321f14;
   --verifie: #2f6b3a;      /* vérifié */
-  --non-verifie: #b8321f;
-  --attention: #8a5a00;
+  --non-verifie: #b3301d;
+  --attention: #7a4f00;
+  --sur-accent: #ffffff;   /* texte sur graphite / armature */
+  --survol: #ffffff70;
+  --survol-leger: #00000008;
+  --fond-ok: #2f6b3a14;
+  --ombre: #1e273055;
+  color-scheme: light;
 
   --police-titre: "Bahnschrift", "DIN Alternate", "Segoe UI Variable Display", "Segoe UI", sans-serif;
   --police-texte: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -24,6 +32,31 @@
 
   --rail: 248px;
   --rayon: 3px;
+}
+
+
+/* ───────── thème sombre ───────── */
+:root[data-theme="dark"] {
+  --beton: #1b2025; --beton-2: #15191d; --feuille: #232a31;
+  --graphite: #e4e7ea; --graphite-2: #b9c0c6; --graphite-3: #98a1a8;
+  --trait: #3d464e; --trait-feuille: #313a42; --bord-champ: #7c858d;
+  --armature: #ef6f58; --armature-fonce: #f58a76; --armature-voile: #ef6f5826;
+  --verifie: #74c383; --non-verifie: #ef6f58; --attention: #e0ab4a;
+  --sur-accent: #15191d; --survol: #ffffff12; --survol-leger: #ffffff08;
+  --fond-ok: #74c3831f; --ombre: #00000099;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --beton: #1b2025; --beton-2: #15191d; --feuille: #232a31;
+    --graphite: #e4e7ea; --graphite-2: #b9c0c6; --graphite-3: #98a1a8;
+    --trait: #3d464e; --trait-feuille: #313a42; --bord-champ: #7c858d;
+    --armature: #ef6f58; --armature-fonce: #f58a76; --armature-voile: #ef6f5826;
+    --verifie: #74c383; --non-verifie: #ef6f58; --attention: #e0ab4a;
+    --sur-accent: #15191d; --survol: #ffffff12; --survol-leger: #ffffff08;
+    --fond-ok: #74c3831f; --ombre: #00000099;
+    color-scheme: dark;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -58,12 +91,12 @@ code { font-family: var(--police-code); font-size: .92em; }
 .marque-signe .cadre { stroke-width: 1; stroke-dasharray: 2 1.6; }
 .marque-signe .acier { fill: var(--armature); stroke: none; }
 .marque-nom { font-family: var(--police-titre); font-size: 21px; font-weight: 600; letter-spacing: -.01em; line-height: 1; }
-.marque-normes { font-size: 11px; color: var(--graphite-3); margin-top: 5px; font-variant-numeric: tabular-nums; }
+.marque-normes { font-size: 12px; color: var(--graphite-3); margin-top: 5px; font-variant-numeric: tabular-nums; }
 
 /* navigation : une planche par élément */
 nav.tabs { display: flex; flex-direction: column; padding: 0 10px; }
 .nav-groupe {
-  font-size: 11.5px; color: var(--graphite-3);
+  font-size: 12px; color: var(--graphite-3);
   padding: 14px 12px 6px; margin-top: 4px;
   border-top: 1px solid var(--trait);
 }
@@ -77,7 +110,7 @@ nav.tabs button {
   color: var(--graphite-2); font-size: 14px;
   transition: background-color .12s, color .12s;
 }
-nav.tabs button:hover { background: #ffffff66; color: var(--graphite); }
+nav.tabs button:hover { background: var(--survol); color: var(--graphite); }
 nav.tabs button.active { background: var(--feuille); color: var(--graphite); font-weight: 600; box-shadow: 0 0 0 1px var(--trait); }
 nav.tabs button.active::before {
   content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px;
@@ -101,11 +134,11 @@ nav.tabs button.active .glyphe .acier-l { stroke: var(--armature); }
 .cartouche > div:nth-child(-n+2) { border-top: 0; }
 .cartouche .c-projet { grid-column: 1 / -1; border-top: 0; }
 .cartouche .c-indice { border-left: 1px solid var(--trait); text-align: center; }
-.cartouche .c-k { color: var(--graphite-3); font-size: 10.5px; }
+.cartouche .c-k { color: var(--graphite-3); font-size: 12px; }
 .cartouche .c-v { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cartouche .c-projet .c-v { font-family: var(--police-titre); font-size: 14px; font-weight: 600; white-space: normal; line-height: 1.2; }
 .cartouche .c-indice .c-v { font-family: var(--police-titre); font-size: 18px; line-height: 1; color: var(--armature); }
-.cartouche .c-foi { grid-column: 1 / -1; color: var(--graphite-3); font-size: 10.5px; }
+.cartouche .c-foi { grid-column: 1 / -1; color: var(--graphite-3); font-size: 12px; }
 
 /* santé des services */
 .health { padding: 0 24px; font-size: 12px; color: var(--graphite-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -141,7 +174,7 @@ h1.module-title small {
   background: var(--feuille);
   border: 1px solid var(--trait);
   border-radius: 2px;
-  box-shadow: 0 1px 0 #0000000a, 0 12px 30px -18px #1e273055;
+  box-shadow: 0 1px 0 #0000000a, 0 12px 30px -18px var(--ombre);
   padding: 0 24px 22px;
   min-height: 320px;
 }
@@ -165,7 +198,7 @@ h1.module-title small {
 .field input, .field select {
   width: 100%; height: 34px; padding: 0 10px;
   background: var(--feuille);
-  border: 1px solid var(--trait); border-bottom-color: var(--graphite-3);
+  border: 1px solid var(--bord-champ);
   border-radius: var(--rayon);
   font-size: 14px; font-variant-numeric: tabular-nums;
   transition: border-color .12s, box-shadow .12s;
@@ -174,7 +207,7 @@ h1.module-title small {
 .field select { appearance: none; padding-right: 30px; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%234a5560' stroke-width='1.4'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 11px center; }
-.field input:hover, .field select:hover { border-color: var(--graphite-3); }
+.field input:hover, .field select:hover { border-color: var(--graphite-2); }
 .field input:focus, .field select:focus { outline: none; border-color: var(--graphite); box-shadow: 0 0 0 3px var(--armature-voile), inset 0 -2px 0 var(--armature); }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
 
@@ -183,17 +216,17 @@ h1.module-title small {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 38px; padding: 0 18px;
   border: 1px solid var(--graphite); border-radius: var(--rayon);
-  background: var(--graphite); color: #fff;
+  background: var(--graphite); color: var(--sur-accent);
   font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none;
   transition: background-color .12s, border-color .12s, transform .06s;
 }
-.btn:hover { background: #2d3944; }
+.btn:hover { background: var(--graphite-2); border-color: var(--graphite-2); }
 .btn:active { transform: translateY(1px); }
 .btn:focus-visible, nav.tabs button:focus-visible, .items-list button:focus-visible { outline: 2px solid var(--armature); outline-offset: 2px; }
 .btn.gold { background: var(--armature); border-color: var(--armature); }
 .btn.gold:hover { background: var(--armature-fonce); border-color: var(--armature-fonce); }
 .btn.ghost { background: transparent; color: var(--graphite); border-color: var(--graphite-3); }
-.btn.ghost:hover { background: #ffffff80; border-color: var(--graphite); }
+.btn.ghost:hover { background: var(--survol); border-color: var(--graphite); }
 .btn.small { height: 32px; padding: 0 13px; font-size: 13px; }
 .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; align-items: center; }
@@ -242,15 +275,15 @@ h1.module-title small {
   padding: 8px 12px; margin: 10px 0; background: var(--armature-voile); border-left: 3px solid var(--armature); border-radius: 0 var(--rayon) var(--rayon) 0;
 }
 .ok { color: var(--verifie); font-weight: 600; }
-p.ok { padding: 8px 12px; margin: 10px 0; background: #2f6b3a12; border-left: 3px solid var(--verifie); border-radius: 0 var(--rayon) var(--rayon) 0; }
+p.ok { padding: 8px 12px; margin: 10px 0; background: var(--fond-ok); border-left: 3px solid var(--verifie); border-radius: 0 var(--rayon) var(--rayon) 0; }
 .note { font-size: 13px; color: var(--graphite-2); padding: 2px 0 2px 12px; border-left: 2px solid var(--trait); margin: 10px 0; max-width: 80ch; }
 
 details { margin-top: 16px; }
 details summary { cursor: pointer; font-size: 12.5px; color: var(--graphite-3); }
 details summary:hover { color: var(--graphite); }
-pre.raw { background: var(--graphite); color: #d6dde3; padding: 12px 14px; border-radius: var(--rayon); font-family: var(--police-code); font-size: 12px; max-height: 320px; overflow: auto; }
+pre.raw { background: var(--beton-2); color: var(--graphite); border: 1px solid var(--trait); padding: 12px 14px; border-radius: var(--rayon); font-family: var(--police-code); font-size: 12px; max-height: 320px; overflow: auto; }
 
-.badge { display: inline-block; border: 1px solid var(--trait); color: var(--graphite-2); border-radius: 2px; padding: 0 6px; font-size: 11.5px; margin-left: 4px; font-weight: 400; }
+.badge { display: inline-block; border: 1px solid var(--trait); color: var(--graphite-2); border-radius: 2px; padding: 0 6px; font-size: 12px; margin-left: 4px; font-weight: 400; }
 
 /* éléments collectés : nomenclature */
 .items-list { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--graphite); }
@@ -273,9 +306,9 @@ pre.raw { background: var(--graphite); color: #d6dde3; padding: 12px 14px; borde
 /* notification */
 .toast {
   position: fixed; right: 24px; bottom: 24px; z-index: 99;
-  background: var(--graphite); color: #fff; font-size: 13.5px;
+  background: var(--graphite); color: var(--sur-accent); font-size: 13.5px;
   padding: 11px 16px 11px 14px; border-radius: var(--rayon); border-left: 3px solid var(--armature);
-  box-shadow: 0 10px 30px -10px #1e273088;
+  box-shadow: 0 10px 30px -10px var(--ombre);
   animation: toast .2s ease-out;
 }
 @keyframes toast { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -312,11 +345,11 @@ pre.raw { background: var(--graphite); color: #d6dde3; padding: 12px 14px; borde
   background: transparent; padding: 8px 14px; margin-bottom: -1px; cursor: pointer;
   color: var(--graphite-2); font-size: 13.5px;
 }
-.onglet:hover { color: var(--graphite); background: #00000008; }
+.onglet:hover { color: var(--graphite); background: var(--survol-leger); }
 .onglet.actif { border-color: var(--graphite); background: var(--feuille); color: var(--graphite); font-weight: 600; }
 .onglet:focus-visible { outline: 2px solid var(--armature); outline-offset: -2px; }
 .onglet .compte { font-family: var(--police-titre); color: var(--graphite-3); font-weight: 400; font-variant-numeric: tabular-nums; }
-.onglet .alerte { background: var(--armature); color: #fff; border-radius: 9px; min-width: 18px; height: 18px; padding: 0 5px; font-size: 11px; display: inline-grid; place-items: center; font-weight: 600; }
+.onglet .alerte { background: var(--armature); color: var(--sur-accent); border-radius: 9px; min-width: 18px; height: 18px; padding: 0 5px; font-size: 12px; display: inline-grid; place-items: center; font-weight: 600; }
 .filtre { margin-left: auto; padding: 0 2px 8px; font-size: 13px; color: var(--graphite-2); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 .filtre input { accent-color: var(--armature); }
 
@@ -328,7 +361,7 @@ table.lot td { text-align: left; font-family: var(--police-texte); vertical-alig
 table.lot th, table.lot td { white-space: nowrap; }
 table.lot td:last-child { white-space: normal; min-width: 120px; }
 table.lot td.num { font-family: var(--police-titre); font-variant-numeric: tabular-nums; }
-table.lot tr:hover td { background: #00000005; }
+table.lot tr:hover td { background: var(--survol-leger); }
 table.lot tr.st-a_revoir td, table.lot tr.st-erreur td, table.lot tr.st-incomplet td { background: var(--armature-voile); }
 .etat { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .etat.verifie { color: var(--verifie); }
@@ -366,3 +399,58 @@ table.lot tr.st-a_revoir td, table.lot tr.st-erreur td, table.lot tr.st-incomple
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ───────── erreurs de saisie ───────── */
+.field input.invalide, .field select.invalide { border-color: var(--non-verifie); box-shadow: inset 0 -2px 0 var(--non-verifie); }
+.field { position: relative; }
+/* message sous le champ, hors du flux : les champs voisins d'une même rangée restent alignés */
+.erreur-champ { position: absolute; left: 0; right: 0; top: 100%; margin: -9px 0 0; font-size: 12.5px; line-height: 1.3;
+  color: var(--non-verifie); font-weight: 600; }
+.field:has(.erreur-champ), .row:has(.erreur-champ) { margin-bottom: 30px; }
+.row:has(.erreur-champ) .field { margin-bottom: 13px; }
+
+/* ───────── accessibilité ───────── */
+.aller-contenu { position: absolute; left: -9999px; top: 8px; z-index: 100; background: var(--graphite); color: var(--sur-accent);
+  padding: 8px 14px; border-radius: var(--rayon); text-decoration: none; }
+.aller-contenu:focus { left: 8px; }
+a:focus-visible, summary:focus-visible, input[type="checkbox"]:focus-visible, select:focus-visible, .reglages button:focus-visible {
+  outline: 2px solid var(--armature); outline-offset: 2px; }
+.visuellement-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ───────── réglages d'affichage (rail) ───────── */
+.shell { zoom: var(--zoom, 1); }
+.rail { height: calc(100vh / var(--zoom, 1)); }
+.reglages { margin: 0 14px 10px; font-size: 13px; }
+.reglages summary { cursor: pointer; color: var(--graphite-2); padding: 4px 2px; list-style-position: inside; }
+.reglages summary:hover { color: var(--graphite); }
+.reglages[open] { background: var(--feuille); border: 1px solid var(--trait); border-radius: var(--rayon); padding: 6px 10px 10px; }
+.reglage { display: grid; gap: 4px; margin-top: 8px; }
+.reglage > span { color: var(--graphite-2); font-size: 12px; }
+.segments { display: flex; border: 1px solid var(--bord-champ); border-radius: var(--rayon); overflow: hidden; }
+.segments button { flex: 1; border: 0; background: transparent; padding: 5px 4px; cursor: pointer; color: var(--graphite-2); font-size: 12.5px; }
+.segments button + button { border-left: 1px solid var(--bord-champ); }
+.segments button:hover { background: var(--survol-leger); color: var(--graphite); }
+.segments button[aria-pressed="true"] { background: var(--graphite); color: var(--sur-accent); font-weight: 600; }
+.segments .t-grande { font-size: 14.5px; } .segments .t-tres-grande { font-size: 16.5px; }
+
+/* ───────── niveau d'expérience : Guidé / Expert ───────── */
+.aide { margin: 4px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--graphite-2); }
+.result .kv .item { flex-wrap: wrap; }
+.result .kv .item .expl { flex-basis: 100%; font-size: 12px; color: var(--graphite-2); margin-top: 2px; line-height: 1.35; }
+.guide-verdict { padding: 10px 14px; margin: 0 0 16px; border-left: 3px solid var(--verifie); background: var(--fond-ok);
+  border-radius: 0 var(--rayon) var(--rayon) 0; font-size: 14px; line-height: 1.5; }
+.guide-verdict.ko { border-left-color: var(--non-verifie); background: var(--armature-voile); }
+.guide-verdict strong { color: var(--verifie); margin-right: 6px; }
+.guide-verdict.ko strong { color: var(--non-verifie); }
+.guide-verdict .que-faire { margin: 6px 0 0; font-weight: 600; }
+.probleme .conseil { display: block; color: var(--graphite); font-weight: 600; margin-top: 2px; }
+.raccourcis { margin: 4px 0 0; font-size: 12px; color: var(--graphite-2); }
+
+html[data-niveau="expert"] .aide,
+html[data-niveau="expert"] .result .kv .item .expl,
+html[data-niveau="expert"] .guide-verdict,
+html[data-niveau="expert"] .probleme .conseil { display: none; }
+html[data-niveau="guide"] details.brut,
+html[data-niveau="guide"] .raccourcis { display: none; }
+/* en mode Guidé, les champs s'empilent : l'aide reste lisible sans tasser les colonnes */
+html[data-niveau="guide"] .row { align-items: start; }
