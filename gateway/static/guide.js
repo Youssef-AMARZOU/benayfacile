@@ -25,6 +25,15 @@ const AIDE = {
   'd-g': "Revêtement, chape, enduit et cloisons ; le poids propre (25 kN/m³ × h) est ajouté automatiquement.",
   'd-q': "Habitation 1,5 ; bureaux 2,5 ; escaliers et circulations 2,5 kN/m² (NF P 06-001).",
   'd-cont': "Rive : panneau en bord de plancher. Intermédiaire : panneau entouré d'autres panneaux.",
+  'p-trav': "Portées libres des poutrelles entre nus des poutres porteuses, séparées par « ; ». Une seule valeur : travée isostatique.",
+  'p-hourdis': "Hauteur du corps creux : 16 pour un plancher 16+4, 20 pour un 20+5.",
+  'p-h0': "Épaisseur de la dalle de compression coulée sur les hourdis.",
+  'p-b0': "Largeur de la nervure de la poutrelle, d'après le fabricant ou le coffrage.",
+  'p-ent': "Distance entre axes de deux poutrelles voisines, fixée par la largeur du hourdis.",
+  'p-gp': "Poids propre du plancher fini (hourdis + poutrelles + dalle de compression), donné par le fabricant des hourdis.",
+  'p-g': "Revêtement, chape, enduit sous plafond et cloisons ; le poids propre du plancher est saisi à part.",
+  'p-q': "Habitation 1,5 ; bureaux 2,5 ; escaliers et circulations 2,5 kN/m² (NF P 06-001).",
+  'p-type': "Préfabriquées : reprise de bétonnage entre poutrelle et dalle de compression, les étriers sont calculés avec k = 0.",
   'b-l': "Longueur en console, du nu de la poutre ou du voile d'appui jusqu'au bord libre.",
   'b-h': "Épaisseur à l'encastrement. Pré-dimensionnement courant : au moins l/10.",
   'b-g': "Revêtement, forme de pente et étanchéité ; le poids propre est ajouté automatiquement.",
@@ -169,6 +178,12 @@ const VERDICTS = {
     const pb = (r.remarques || []).filter(x => !/élancé/.test(x));
     return boiteVerdict(r.verifie,
       `Moment d'encastrement ${fmt(r.mu_knm, 2)} kN·m/m. Aciers principaux en haut : ${r.nappe_superieure?.ferraillage?.choix || '—'}, prolongés de ${fmt(r.prolongement_chapeaux_m, 2)} m dans la dalle intérieure.`, pb);
+  },
+  plancher(r) {
+    const pb = r.remarques || [];
+    const t = r.travees || [];
+    return boiteVerdict(r.verifie,
+      `Plancher ${r.designation}, ${t.length} travée${t.length > 1 ? 's' : ''} (méthode ${r.methode}). Aciers bas : ${t.map(x => x.ferraillage?.choix || '—').join(' / ')} ; dalle de compression : ${r.dalle_compression?.choix || '—'}.`, pb);
   },
   sismique(r) {
     const part = r.W_kn ? Math.round(100 * r.F_base_kn / r.W_kn) : null;

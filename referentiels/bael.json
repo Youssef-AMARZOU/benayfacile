@@ -178,5 +178,54 @@
       "a_sur_bd_max_x_fe": 4.2,
       "_source": "B.6.5,1 : h/l ≥ 1/16, h/l ≥ Mt/(10 M0), A/(b0 d) ≤ 4,2/fe ; console : Mt = M0, d'où h/l ≥ 1/10 ; appliqué aussi à la dalle portant dans un seul sens (bande de 1 m) (à vérifier)"
     }
+  },
+  "planchers_corps_creux": {
+    "_source": "BAEL 91 rév. 99 — B.6.2,21 (méthode forfaitaire), B.6.2,22 (méthode de Caquot), A.4.1,3 (largeur de table), B.6.8,42 (planchers à entrevous)",
+    "forfaitaire": {
+      "appuis_sur_m0": {"deux_travees": 0.6, "voisin_rive": 0.5, "intermediaire": 0.4},
+      "travee": "Mt ≥ max((1 + 0,3 α) M0 ; 1,05 M0) − (Mw + Me)/2 ; Mt ≥ (1 + 0,3 α) M0/2 (intermédiaire), (1,2 + 0,3 α) M0/2 (rive)",
+      "effort_tranchant": "V0 = p l/2, majoré de 15 % (deux travées) ou 10 % (plus de deux travées) sur le premier appui intermédiaire",
+      "_source": "B.6.2,21 et Annexe E1 ; conditions B.6.2,210 : Q ≤ max(2G ; 5 kN/m²), inerties égales, 0,8 ≤ li/li+1 ≤ 1,25, fissuration peu préjudiciable"
+    },
+    "caquot": {
+      "moment_appui": "(pw l'w³ + pe l'e³) / (8,5 (l'w + l'e)) ; l' = l (travée de rive), 0,8 l (travée intermédiaire)",
+      "minoree": "G' = 2G/3 pour le calcul des moments sur appuis lorsque Q ≤ max(2G ; 5 kN/m²)",
+      "_source": "B.6.2,22 et Annexe E2 (charges réparties)"
+    },
+    "chapeau_rive_sur_m0": 0.15,
+    "_chapeau_rive_source": "B.6.2,21 : appui de rive, aciers capables d'équilibrer au moins 0,15 M0 (à vérifier)",
+    "longueur_chapeaux": {
+      "voisin_rive": 0.25,
+      "intermediaire": 0.2,
+      "_source": "B.6.2,21 commentaire / Annexe E1 : chapeaux ≥ l/4 (appui voisin de rive), l/5 (autres appuis), l = plus grande portée adjacente (à vérifier)"
+    },
+    "h0_min_cm": 4.0,
+    "_h0_source": "B.6.8,423 : dalle de compression d'au moins 4 cm (à vérifier)",
+    "dalle_compression": {
+      "a_perp": "4 L / fe (50 ≤ L ≤ 80 cm) ; 200 / fe (L ≤ 50 cm), en cm²/m, L = entraxe des nervures en cm",
+      "a_par": "A⊥ / 2",
+      "maille_perp_max_cm": 20,
+      "maille_par_max_cm": 33,
+      "_source": "B.6.8,423"
+    },
+    "fleche": {
+      "h_sur_l_min_inverse": 22.5,
+      "h_sur_l_moment": "≥ Mt / (15 M0)",
+      "a_sur_b0d_max_x_fe": 3.6,
+      "_source": "B.6.8,424 : h/l ≥ 1/22,5 ; h/l ≥ Mt/(15 M0) ; A/(b0 d) ≤ 3,6/fe (fe en MPa)"
+    },
+    "fleche_calcul": {
+      "formule": "Δft = fgv − fji + fpi − fgi ; f = M l² / (10 E If) ; Ifi = 1,1 I0 / (1 + λi μ) ; Ifv = 1,1 I0 / (1 + λv μ)",
+      "lambda": "λi = 0,05 ft28 / (ρ (2 + 3 b0/b)) ; λv = 0,4 λi ; μ = max(0 ; 1 − 1,75 ft28 / (4 ρ σs + ft28)) ; ρ = A/(b0 d)",
+      "modules": "Ei = 11 000 fc28^(1/3) ; Ev = Ei / 3 (MPa)",
+      "admissible": "l/500 si l ≤ 5 m ; 0,5 cm + l/1000 sinon",
+      "charges": "j : poids propre du plancher seul (pose des cloisons) ; g : G total ; p : G + Q",
+      "_source": "B.6.5,2 et commentaires (méthode de l'inertie fissurée) (à vérifier)"
+    },
+    "etriers": {
+      "formule": "At/(b0 st) ≥ (τu − 0,3 ft28 k) / (0,9 fet/γs) ; At fet/(b0 st) ≥ 0,4 MPa ; st ≤ min(0,9 d ; 40 cm) ; k = 1 sans reprise, 0 avec reprise",
+      "tau_lim": "min(0,2 fc28/γb ; 5 MPa) peu préjudiciable ; min(0,15 fc28/γb ; 4 MPa) sinon",
+      "_source": "A.5.1,21 ; A.5.1,22 ; A.5.1,23"
+    }
   }
 }

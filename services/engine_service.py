@@ -939,6 +939,21 @@ def balcon(inp: dalles.BalconInput):
         raise HTTPException(status_code=422, detail=str(err))
 
 
+
+# --------------------------------------------------------------------------- #
+# Planchers à corps creux (BAEL B.6.2, B.6.8,42) — voir planchers.py           #
+# --------------------------------------------------------------------------- #
+import planchers  # noqa: E402
+
+
+@app.post("/plancher")
+def plancher(inp: planchers.PlancherInput):
+    try:
+        return planchers.plancher(inp)
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err))
+
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8002)

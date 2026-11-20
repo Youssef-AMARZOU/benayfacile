@@ -425,7 +425,7 @@ SOMMAIRE = [
     ("s1", "Présentation de l'ouvrage", []), ("s2", "Règlements et documents de référence", []),
     ("s3", "Hypothèses de calcul", ["Béton", "Acier", "Enrobages et fissuration", "Sol de fondation", "Charges", "Combinaisons d'actions"]),
     ("s4", "Modélisation", []), ("s5", "Étude sismique (RPS 2000 version 2011)", []),
-    ("s6", "Dimensionnement des éléments", ["Poteaux", "Poutres", "Semelles", "Voiles", "Dalles et balcons"]),
+    ("s6", "Dimensionnement des éléments", ["Poteaux", "Poutres", "Semelles", "Voiles", "Dalles et balcons", "Planchers à corps creux"]),
     ("s7", "Quantités de béton et d'acier", []), ("s8", "Conclusion, réserves et visas", []),
 ]
 
@@ -877,6 +877,67 @@ def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
     return "".join(out)
 
 
+def section_planchers(planchers: List[dict], m: dict) -> str:
+    out = ["<h3>6.6 Planchers à corps creux</h3>"]
+    if not planchers:
+        return "".join(out + ["<p>Aucun plancher à corps creux calculé.</p>"])
+    out.append("<p>Les planchers à corps creux sont constitués de hourdis posés sur des poutrelles en T, coiffés d'une dalle "
+               "de compression armée d'un treillis soudé. Chaque poutrelle est calculée comme une poutre continue de largeur "
+               "de table " + im(r"b = b_0 + 2 \, b_1") + ", avec " + im(r"b_1 \le \min \left( l_0 / 2 \;;\; l / 10 \right)")
+               + " (A.4.1,3). Les moments sont obtenus par la méthode forfaitaire lorsque ses conditions sont remplies "
+               "(B.6.2,21), sinon par la méthode de Caquot (B.6.2,22) :</p>")
+    out.append(EQ(r"M_t + \frac{M_w + M_e}{2} \ge \max \left( 1{,}05 \;;\; 1 + 0{,}3 \, \alpha \right) M_0 \;,\qquad "
+                  r"M_a = \frac{p_w \, l_w'^3 + p_e \, l_e'^3}{8{,}5 \left( l_w' + l_e' \right)}"))
+    out.append("<p>La flèche est dispensée de calcul si " + im(r"h / l \ge 1 / 22{,}5") + ", " + im(r"h / l \ge M_t / (15 \, M_0)")
+               + " et " + im(r"A / (b_0 \, d) \le 3{,}6 / f_e") + " (B.6.8,424) ; sinon elle est calculée par la méthode "
+               "de l'inertie fissurée (B.6.5,2) :</p>")
+    out.append(EQ(r"\Delta f_t = f_{gv} - f_{ji} + f_{pi} - f_{gi} \le f_{adm} \;,\qquad f = \frac{M \, l^2}{10 \, E \, I_f}"))
+    lignes = []
+    for i, p in enumerate(planchers):
+        t = p.get("travees") or []
+        calc = [(x.get("fleche") or {}).get("calcul") for x in t if (x.get("fleche") or {}).get("calcul")]
+        pire = max(calc, key=lambda c: (c.get("delta_ft_mm") or 0) / (c.get("f_adm_mm") or 1), default=None)
+        fl = [f"{fr(pire.get('delta_ft_mm'), 1)} / {fr(pire.get('f_adm_mm'), 1)} mm" if pire else "dispensée"]
+        lignes.append([esc(p.get("nom") or f"PL{i + 1}"), esc(p.get("niveau") or "—"), esc(p.get("designation") or "—"),
+                       " ; ".join(fr(l) for l in p.get("travees_m") or []), esc(p.get("methode") or "—"),
+                       " / ".join(esc((x.get("ferraillage") or {}).get("choix") or "—") for x in t),
+                       esc((p.get("dalle_compression") or {}).get("choix") or "—"), " ; ".join(fl), etat(bool(p.get("verifie")))])
+    out.append(tableau(["Repère", "Niv.", "Type", ent("Portées", "m"), "Méthode", "Aciers bas", "Dalle de compression",
+                        ent("Flèche Δft / adm.", "pire travée"), "État"], lignes, ["", "", "c", "", "", "", "", "c", "c"],
+                       largeurs=[7, 11, 7, 12, 11, 12, 14, 13, 13], titre="Planchers à corps creux"))
+    p = max(planchers, key=lambda x: max((t.get("mt_knm") or 0) for t in x.get("travees") or [{}]))
+    t = max(p.get("travees") or [{}], key=lambda x: x.get("mt_knm") or 0)
+    c = p.get("charges") or {}
+    elu = t.get("elu") or {}
+    out.append(f"<h4>Exemple de calcul : travée la plus sollicitée du plancher {esc(p.get('nom') or 'PL1')}</h4>")
+    lignes_calc = [
+        ("Charges par poutrelle", im(rf"p_u = 1{{,}}35 \times {tx(c.get('g_kn_m'), 3)} + 1{{,}}5 \times {tx(c.get('q_kn_m'), 3)}"),
+         f"{fr(c.get('pu_kn_m'), 2)} kN/m"),
+        ("Moment isostatique", im(rf"M_0 = \frac{{{tx(c.get('pu_kn_m'), 3)} \times {tx(t.get('portee_m'))}^2}}{{8}}"), f"{fr(t.get('m0_knm'), 2)} kN·m"),
+        ("Moment en travée", esc(f"méthode {p.get('methode')}"), f"{fr(t.get('mt_knm'), 2)} kN·m"),
+        ("Table de compression", im(rf"M_{{tu}} = b \, h_0 \, f_{{bu}} \left( d - h_0 / 2 \right) \;,\; b = {tx(t.get('b_cm'), 0)}\ \text{{cm}}"),
+         f"{fr(elu.get('mtu_knm'), 2)} kN·m"),
+        ("Moment réduit", im(rf"\mu = \frac{{M_t}}{{b \, d^2 \, f_{{bu}}}} \;,\; d = {tx(p.get('d_m'), 3)}\ \text{{m}}")
+         + "<br>" + esc(elu.get("cas") or ""), fr(elu.get("mu"), 4)),
+        ("Acier à l'ELU", im(r"A_s = \frac{M_t}{Z \, f_{su}}"), f"{fr(elu.get('as_elu_cm2'), 2)} cm²"),
+        ("Aciers en travée", esc((t.get("ferraillage") or {}).get("choix") or "—"), f"{fr((t.get('ferraillage') or {}).get('as_fournie_cm2'), 2)} cm²"),
+        ("Effort tranchant", im(rf"\tau_u = {tx((t.get('cisaillement') or {}).get('tau_u_mpa'), 3)}\ \text{{MPa}} \le {tx((t.get('cisaillement') or {}).get('tau_lim_mpa'))}\ \text{{MPa}}"),
+         esc((t.get("etriers") or {}).get("choix") or "—")),
+    ]
+    f = t.get("fleche") or {}
+    if f.get("calcul"):
+        cf = f["calcul"]
+        lignes_calc.append(("Flèche (B.6.5,2)", im(rf"\Delta f_t = {tx(cf.get('fgv_mm'))} - {tx(cf.get('fji_mm'))} + {tx(cf.get('fpi_mm'))} - {tx(cf.get('fgi_mm'))}"),
+                            f"{fr(cf.get('delta_ft_mm'), 2)} / {fr(cf.get('f_adm_mm'), 1)} mm"))
+    else:
+        lignes_calc.append(("Flèche", "conditions de B.6.8,424 satisfaites", "dispensée"))
+    ts = p.get("dalle_compression") or {}
+    lignes_calc.append(("Dalle de compression", im(rf"A_\perp = \frac{{4 \, L}}{{f_e}} = {tx(ts.get('a_perp_cm2_m'))}\ \text{{cm²/m}}"),
+                        esc(ts.get("choix") or "—")))
+    out.append(calcul(lignes_calc))
+    return "".join(out)
+
+
 def quantites(inp: dict) -> str:
     out = [h2(7, "s7", "Quantités de béton et d'acier")]
     lot = inp.get("lot")
@@ -922,7 +983,8 @@ def conclusion(inp: dict, bur: dict, date: str) -> str:
     reserves = []
     for fam, verif, nom in (("poteaux", ok_poteau, "Poteau"), ("poutres", ok_poutre, "Poutre"),
                             ("semelles_isolees", ok_semelle, "Semelle"), ("voiles", ok_voile, "Voile"),
-                            ("dalles", lambda d: bool(d.get("verifie")), "Dalle"), ("balcons", lambda b: bool(b.get("verifie")), "Balcon")):
+                            ("dalles", lambda d: bool(d.get("verifie")), "Dalle"), ("balcons", lambda b: bool(b.get("verifie")), "Balcon"),
+                            ("planchers", lambda p: bool(p.get("verifie")), "Plancher")):
         for i, e in enumerate(inp.get(fam) or []):
             if not verif(e):
                 reserves.append(f"{nom} {_nom(e, i, nom[0])}")
@@ -967,6 +1029,7 @@ def construire(inp: dict, bur: dict) -> str:
         section_semelles((inp.get("semelles_isolees") or []) + (inp.get("semelles_filantes") or []), m),
         section_voiles(inp.get("voiles") or [], m),
         section_dalles(inp.get("dalles") or [], inp.get("balcons") or [], m),
+        section_planchers(inp.get("planchers") or [], m),
         quantites(inp), conclusion(inp, bur, date),
     ]
     return (f'<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Note de calcul — {esc(titre)}</title>'

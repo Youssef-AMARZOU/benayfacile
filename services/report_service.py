@@ -50,6 +50,7 @@ class NoteInput(BaseModel):
     voiles: Optional[list] = None
     dalles: Optional[list] = None
     balcons: Optional[list] = None
+    planchers: Optional[list] = None
     bureau: Optional[dict] = None
 
 
