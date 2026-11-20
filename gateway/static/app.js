@@ -960,16 +960,20 @@ function compter(racine) {
 }
 
 /* ---------- préférences d'affichage (mémorisées sur ce poste) ---------- */
-const PREFS_DEFAUT = { style: 'stade', theme: 'auto', taille: '1', niveau: 'guide', langue: 'fr' };
+const PREFS_DEFAUT = { style: 'maroc', theme: 'auto', taille: '1', niveau: 'guide', langue: 'fr', v: 2 };
 function lirePrefs() {
-  try { return { ...PREFS_DEFAUT, ...JSON.parse(localStorage.getItem('benayfacile.prefs') || '{}') }; }
+  try {
+    const lu = JSON.parse(localStorage.getItem('benayfacile.prefs') || '{}');
+    if (lu.v !== 2) { delete lu.style; lu.v = 2; }   /* v2 : le style « Maroc » devient le style par défaut */
+    return { ...PREFS_DEFAUT, ...lu };
+  }
   catch { return { ...PREFS_DEFAUT }; }
 }
 function ecrirePrefs(p) { try { localStorage.setItem('benayfacile.prefs', JSON.stringify(p)); } catch { /* stockage indisponible */ } }
 const prefs = lirePrefs();
 function appliquerPrefs() {
   const r = document.documentElement;
-  r.dataset.style = prefs.style === 'plan' ? 'plan' : 'stade';
+  r.dataset.style = ['plan', 'stade'].includes(prefs.style) ? prefs.style : 'maroc';
   r.dataset.niveau = prefs.niveau === 'expert' ? 'expert' : 'guide';
   definirLangue(prefs.langue);
   if (prefs.theme === 'auto') r.removeAttribute('data-theme');

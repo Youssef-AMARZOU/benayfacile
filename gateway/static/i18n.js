@@ -16,7 +16,7 @@ const EN = new Map(Object.entries({
   "Vérification sismique": "Seismic check", "Livrables": "Deliverables", "Synthèse de calcul": "Calculation summary",
   "Réglages": "Settings", "Votre bureau": "Your office", "Maître d'ouvrage": "Client", "Indice": "Revision",
   "Sans titre": "Untitled", "Les textes officiels BAEL et RPS font foi.": "The official BAEL and RPS texts prevail.",
-  "Affichage": "Display", "Style": "Style", "Stade": "Stadium", "Plan": "Blueprint", "Niveau": "Level", "Guidé": "Guided", "Expert": "Expert", "Thème": "Theme", "Auto": "Auto",
+  "Affichage": "Display", "Style": "Style", "Maroc": "Moroccan", "Stade": "Stadium", "Plan": "Blueprint", "Niveau": "Level", "Guidé": "Guided", "Expert": "Expert", "Thème": "Theme", "Auto": "Auto",
   "Clair": "Light", "Sombre": "Dark", "Taille du texte": "Text size", "Langue": "Language", "Normale": "Normal",
   "Grande": "Large", "Très grande": "Extra large", "Suit le réglage de Windows": "Follows the Windows setting",
   "Aides sous les champs, verdicts en clair, conseils": "Help under fields, plain-language verdicts, advice",

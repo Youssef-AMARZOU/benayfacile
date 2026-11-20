@@ -631,3 +631,92 @@ html[data-niveau="guide"] .row { align-items: start; }
 
 /* crédit du développeur, en pied du menu */
 .credit { margin: 10px 24px 0; padding-top: 10px; border-top: 1px solid var(--trait); font-size: 12px; line-height: 1.4; color: var(--graphite-2); }
+
+/* ═══════════════════════════ style « Maroc » ═══════════════════════════
+   Même identité que la note de calcul : bureau d'études marocain, sobre.
+   Papier beige, feuilles blanches quadrillées, Arial, accent terre de Marrakech,
+   vert pour « vérifié », frise de zellige (étoile à huit branches, SVG intégré).
+   Ni photo, ni halo, ni animation décorative. */
+:root[data-style="maroc"] {
+  --beton: #f3eee3; --beton-2: #ebe3d2; --feuille: #ffffff;
+  --graphite: #1a1a1a; --graphite-2: #3d3a35; --graphite-3: #57524a;
+  --trait: #c9bfa9; --trait-feuille: #e3dccd; --bord-champ: #6e675b;
+  --armature: #8a3324; --armature-fonce: #6f2819; --armature-voile: #8a332414;
+  --verifie: #1f5c32; --non-verifie: #b01e1e; --attention: #7a4f00;
+  --sur-accent: #ffffff; --survol: #8a332410; --survol-leger: #00000008;
+  --fond-ok: #1f5c3214; --ombre: #00000000; --entete: #e9e2d3;
+  --police-titre: Arial, Helvetica, "Liberation Sans", sans-serif;
+  --police-texte: Arial, Helvetica, "Liberation Sans", sans-serif;
+  --rayon: 0px;
+  --zellige: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><rect width='40' height='40' fill='%238a3324'/><g fill='%231f4d3a'><path d='M0 0H8L0 8Z'/><path d='M40 0H32L40 8Z'/><path d='M0 40H8L0 32Z'/><path d='M40 40H32L40 32Z'/></g><g fill='%23efe3c4'><rect x='9' y='9' width='22' height='22'/><rect x='9' y='9' width='22' height='22' transform='rotate(45 20 20)'/></g><g fill='%238a3324'><rect x='14' y='14' width='12' height='12'/><rect x='14' y='14' width='12' height='12' transform='rotate(45 20 20)'/></g><g fill='%231f4d3a'><rect x='17' y='17' width='6' height='6' transform='rotate(45 20 20)'/></g></svg>");
+}
+:root[data-style="maroc"][data-theme="dark"] {
+  --beton: #1d1915; --beton-2: #171411; --feuille: #26211c;
+  --graphite: #efe8da; --graphite-2: #cfc5b3; --graphite-3: #ada290;
+  --trait: #4a4136; --trait-feuille: #3a332b; --bord-champ: #8d8370;
+  --armature: #e0846f; --armature-fonce: #eb9c89; --armature-voile: #e0846f22;
+  --verifie: #7fc28f; --non-verifie: #f07b6c; --attention: #e0ab4a;
+  --sur-accent: #1d1915; --survol: #ffffff10; --survol-leger: #ffffff08;
+  --fond-ok: #7fc28f1c; --entete: #3a3229;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-style="maroc"]:not([data-theme="light"]) {
+    --beton: #1d1915; --beton-2: #171411; --feuille: #26211c;
+    --graphite: #efe8da; --graphite-2: #cfc5b3; --graphite-3: #ada290;
+    --trait: #4a4136; --trait-feuille: #3a332b; --bord-champ: #8d8370;
+    --armature: #e0846f; --armature-fonce: #eb9c89; --armature-voile: #e0846f22;
+    --verifie: #7fc28f; --non-verifie: #f07b6c; --attention: #e0ab4a;
+    --sur-accent: #1d1915; --survol: #ffffff10; --survol-leger: #ffffff08;
+    --fond-ok: #7fc28f1c; --entete: #3a3229;
+    color-scheme: dark;
+  }
+}
+:root[data-style="maroc"] body { -webkit-font-smoothing: auto; }
+/* pas d'animation décorative */
+:root[data-style="maroc"] .tab.active,
+:root[data-style="maroc"] .result .kv .item { animation: none; }
+/* rail : papier, filet, frise sous la marque */
+:root[data-style="maroc"] .rail { background: var(--beton-2); border-right: 1px solid var(--trait); }
+:root[data-style="maroc"] .marque-nom { font-weight: 700; letter-spacing: 0; color: var(--armature); }
+:root[data-style="maroc"] .facade { display: block; flex: none; height: 18px; margin: -6px 20px 16px; background: var(--zellige) repeat-x;
+  background-size: 16px 16px; background-position: 0 50%; border-top: 1px solid var(--graphite); border-bottom: 1px solid var(--graphite); }
+:root[data-style="maroc"] nav.tabs button.active { box-shadow: none; outline: 1px solid var(--trait); background: var(--feuille); }
+:root[data-style="maroc"] nav.tabs button.active::before { border-radius: 0; }
+:root[data-style="maroc"] .cartouche { border: 1px solid var(--graphite); }
+/* titres : trait de couleur, sans effet */
+:root[data-style="maroc"] h1.module-title { font-size: 28px; font-weight: 700; letter-spacing: 0; padding-bottom: 10px;
+  border-bottom: 2px solid var(--armature); }
+:root[data-style="maroc"] h1.module-title small { border-left: 0; padding-left: 0; }
+/* feuille de résultats : cadre net, en-tête beige comme les tableaux de la note */
+:root[data-style="maroc"] .grid > .card:last-child { border: 1px solid var(--graphite); box-shadow: none; border-radius: 0; }
+:root[data-style="maroc"] .grid > .card:last-child > h2:first-child { background: var(--entete); }
+:root[data-style="maroc"] .card h2, :root[data-style="maroc"] .card h3 { font-weight: 700; }
+:root[data-style="maroc"] .card h3 { color: var(--armature); border-bottom: 1px solid var(--armature); padding-bottom: 2px; }
+:root[data-style="maroc"] .result .kv .item .v { font-weight: 700; }
+:root[data-style="maroc"] .result table { border: 1px solid var(--graphite); }
+:root[data-style="maroc"] .result th, :root[data-style="maroc"] .result td { border: 1px solid var(--trait); }
+:root[data-style="maroc"] .result th { background: var(--entete); color: var(--graphite); border-color: var(--graphite-3); }
+:root[data-style="maroc"] table.lot { border: 1px solid var(--graphite); }
+:root[data-style="maroc"] table.lot th { background: var(--entete); }
+:root[data-style="maroc"] .pastille,
+:root[data-style="maroc"] .onglet .alerte,
+:root[data-style="maroc"] .voyant,
+:root[data-style="maroc"] .spinner, :root[data-style="maroc"] .spinner::after { border-radius: 0; }
+:root[data-style="maroc"] .warn { border: 1px solid var(--non-verifie); border-left-width: 3px; background: transparent; }
+:root[data-style="maroc"] p.ok { border: 1px solid var(--verifie); border-left-width: 3px; background: transparent; }
+:root[data-style="maroc"] .toast { box-shadow: none; border: 1px solid var(--graphite); border-left: 3px solid var(--armature); }
+:root[data-style="maroc"] #apercu-note iframe { box-shadow: none; border-radius: 0; }
+/* accueil : bandeau sobre, frise de zellige et titre, sans photo */
+:root[data-style="maroc"] .bandeau-photos {
+  display: block; margin: 0 0 26px; padding: 40px 26px 20px; position: relative;
+  background: var(--feuille); border: 1px solid var(--graphite);
+}
+:root[data-style="maroc"] .bandeau-photos::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 22px;
+  background: var(--zellige) repeat-x; background-size: 22px 22px; border-bottom: 1px solid var(--graphite);
+}
+:root[data-style="maroc"] .bandeau-photos .photo { display: none; }
+:root[data-style="maroc"] .bandeau-titre { display: block; font-size: 24px; font-weight: 700; color: var(--armature); }
+:root[data-style="maroc"] .bandeau-sous { display: block; margin-top: 6px; font-size: 14px; color: var(--graphite-2); }
+:root[data-style="maroc"] main a:not(.btn) { color: var(--armature); }
