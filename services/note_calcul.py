@@ -424,7 +424,7 @@ SOMMAIRE = [
     ("s1", "Présentation de l'ouvrage", []), ("s2", "Règlements et documents de référence", []),
     ("s3", "Hypothèses de calcul", ["Béton", "Acier", "Enrobages et fissuration", "Sol de fondation", "Charges", "Combinaisons d'actions"]),
     ("s4", "Modélisation", []), ("s5", "Étude sismique (RPS 2000 version 2011)", []),
-    ("s6", "Dimensionnement des éléments", ["Poteaux", "Poutres", "Semelles", "Voiles"]),
+    ("s6", "Dimensionnement des éléments", ["Poteaux", "Poutres", "Semelles", "Voiles", "Dalles et balcons"]),
     ("s7", "Quantités de béton et d'acier", []), ("s8", "Conclusion, réserves et visas", []),
 ]
 
@@ -780,6 +780,90 @@ def section_voiles(liste: List[dict], m: dict) -> str:
     return "".join(out)
 
 
+def _choix(r: Optional[dict]) -> str:
+    f = (r or {}).get("ferraillage") or {}
+    return esc(f.get("choix") or "—")
+
+
+def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
+    out = ["<h3>6.5 Dalles et balcons</h3>"]
+    if not dalles and not balcons:
+        return "".join(out + ["<p>Aucune dalle ni aucun balcon calculé.</p>"])
+    if dalles:
+        out.append("<p>Les dalles pleines sont calculées comme des panneaux rectangulaires uniformément chargés, appuyés sur "
+                   "leur contour (BAEL A.8.2). Avec " + im(r"\rho = l_x / l_y") + ", un panneau tel que " + im(r"\rho < 0{,}4")
+                   + " ne porte que dans le sens " + im("l_x") + " ; sinon, les moments isostatiques sont (Annexe E3) :</p>")
+        out.append(EQ(r"M_{0x} = \mu_x \, p_u \, l_x^2 \;,\qquad M_{0y} = \mu_y \, M_{0x} \;,\qquad "
+                      r"\mu_x = \frac{1}{8 \left( 1 + 2{,}4 \, \rho^3 \right)} \;,\qquad \mu_y = \rho^3 \left( 1{,}9 - 0{,}9 \, \rho \right) \ge 0{,}25"))
+        out.append("<p>Les moments en travée et sur appuis tiennent compte de la continuité du panneau, avec "
+                   + im(r"M_t + \frac{M_w + M_e}{2} \ge 1{,}25 \, M_0") + " (A.8.2,32). Les dalles sont sans armatures d'effort "
+                   "tranchant lorsque " + im(r"\tau_u \le 0{,}05 \, f_{c28}") + " (A.5.2,2).</p>")
+        lignes = []
+        for i, d in enumerate(dalles):
+            r = d.get("resultats") or {}
+            lignes.append([esc(_nom(d, i, "D")), esc(d.get("niveau") or "—"),
+                           f"{fr(d.get('lx_m'))} × {fr(d.get('ly_m'))}", fr(d.get("h_cm"), 0), fr(d.get("rho"), 2),
+                           fr((d.get("charges") or {}).get("pu_kn_m2"), 2), fr(d.get("m0x_knm"), 2),
+                           _choix(r.get("x_travee")), _choix(r.get("y_travee")), _choix(r.get("appuis")), etat(bool(d.get("verifie")))])
+        out.append(tableau(["Repère", "Niveau", ent(im(r"l_x \times l_y"), "m"), ent("h", "cm"), im(r"\rho"), ent(im("p_u"), "kN/m²"),
+                            ent(im("M_{0x}"), "kN·m/m"), "Travée x", "Travée y", "Chapeaux", "État"],
+                           lignes, ["", "", "c", "n", "n", "n", "n", "", "", "", "c"],
+                           largeurs=[7, 7, 11, 5, 6, 8, 9, 12, 12, 12, 11], titre="Dalles pleines"))
+        d = max(dalles, key=lambda x: x.get("m0x_knm") or 0)
+        r = d.get("resultats") or {}
+        x = r.get("x_travee") or {}
+        c = d.get("charges") or {}
+        out.append(f"<h4>Exemple de calcul : dalle la plus sollicitée, {esc(_nom(d, 0, 'D'))}</h4>")
+        out.append(calcul([
+            ("Charges", im(rf"p_u = 1{{,}}35 \times {tx(c.get('g_kn_m2'))} + 1{{,}}5 \times {tx(c.get('q_kn_m2'))}"), f"{fr(c.get('pu_kn_m2'), 2)} kN/m²"),
+            ("Élancement", im(rf"\rho = \frac{{{tx(d.get('lx_m'))}}}{{{tx(d.get('ly_m'))}}}"), fr(d.get("rho"), 3)),
+            ("Moment isostatique", im(rf"M_{{0x}} = {tx(d.get('mu_x'), 4)} \times {tx(c.get('pu_kn_m2'), 3)} \times {tx(d.get('lx_m'))}^2"), f"{fr(d.get('m0x_knm'), 2)} kN·m/m"),
+            ("Moment en travée", im(rf"M_{{tx}} = {tx((d.get('coefficients') or {}).get('travee'))} \, M_{{0x}}"), f"{fr(x.get('m_elu_knm'), 2)} kN·m/m"),
+            ("Moment réduit", im(rf"\mu = \frac{{M_{{tx}}}}{{b \, d^2 \, f_{{bu}}}} \;,\; d = {tx(x.get('d_m'), 3)}\ \text{{m}}"), fr(x.get("mu"), 4)),
+            ("Acier à l'ELU", im(r"A_s = \frac{M_{tx}}{Z \, f_{su}}"), f"{fr(x.get('as_elu_cm2_m'), 2)} cm²/m"),
+            ("Acier minimal", im(r"A_{\min} = \max \left( \rho_0 \, \frac{3 - \rho}{2} \, b \, h \;;\; 0{,}23 \, b \, d \, \frac{f_{t28}}{f_e} \right)"), f"{fr(x.get('as_min_cm2_m'), 2)} cm²/m"),
+            ("Acier mis en place", _choix(x), etat(bool(d.get("verifie")))),
+        ]))
+    if balcons:
+        out.append("<p>Les balcons sont calculés comme des consoles encastrées, par bande de 1 m. Les aciers principaux sont "
+                   "placés en <b>nappe supérieure</b>, zone tendue de la console, et prolongés dans la dalle intérieure. "
+                   "Le moment d'encastrement tient compte du garde-corps " + im("P") + " au bord libre et de la poussée "
+                   + im("H") + " sur la main courante, à la hauteur " + im("h_g") + " :</p>")
+        out.append(EQ(r"M_u = 1{,}35 \left( \frac{g \, l^2}{2} + P \, l \right) + 1{,}5 \left( \frac{q \, l^2}{2} + H \, h_g \right) \;,\qquad "
+                      r"V_u = 1{,}35 \left( g \, l + P \right) + 1{,}5 \, q \, l"))
+        lignes = []
+        for i, b in enumerate(balcons):
+            lignes.append([esc(_nom(b, i, "B")), esc(b.get("niveau") or "—"), fr(b.get("longueur_m")), fr(b.get("h_cm"), 0),
+                           fr(b.get("mu_knm"), 2), fr(b.get("vu_kn"), 2), _choix(b.get("nappe_superieure")), _choix(b.get("repartition")),
+                           fr(b.get("prolongement_chapeaux_m")), etat(bool(b.get("verifie")))])
+        out.append(tableau(["Repère", "Niveau", ent("l", "m"), ent("h", "cm"), ent(im("M_u"), "kN·m/m"), ent(im("V_u"), "kN/m"),
+                            "Nappe supérieure", "Répartition", ent("Ancrage", "m"), "État"],
+                           lignes, ["", "", "n", "n", "n", "n", "", "", "n", "c"],
+                           largeurs=[8, 8, 6, 6, 10, 9, 15, 14, 11, 13], titre="Balcons en porte-à-faux"))
+        b = max(balcons, key=lambda x: x.get("mu_knm") or 0)
+        c = b.get("charges") or {}
+        s = b.get("nappe_superieure") or {}
+        els = s.get("els") or {}
+        l = b.get("longueur_m")
+        out.append(f"<h4>Exemple de calcul : balcon le plus sollicité, {esc(_nom(b, 0, 'B'))}</h4>")
+        out.append(calcul([
+            ("Charges", im(rf"g = {tx(c.get('g_kn_m2'))}\ \text{{kN/m²}} \;,\; q = {tx(c.get('q_kn_m2'))}\ \text{{kN/m²}} \;,\; P = {tx(c.get('garde_corps_kn_m'))}\ \text{{kN/m}}"), ""),
+            ("Moment d'encastrement", im(rf"M_u = 1{{,}}35 \left( \frac{{{tx(c.get('g_kn_m2'))} \times {tx(l)}^2}}{{2}} + {tx(c.get('garde_corps_kn_m'))} \times {tx(l)} \right) + 1{{,}}5 \left( \frac{{{tx(c.get('q_kn_m2'))} \times {tx(l)}^2}}{{2}} + {tx(c.get('poussee_kn_m'))} \times {tx(c.get('hauteur_main_courante_m'))} \right)"),
+             f"{fr(b.get('mu_knm'), 2)} kN·m/m"),
+            ("Moment réduit", im(rf"\mu = \frac{{M_u}}{{b \, d^2 \, f_{{bu}}}} \;,\; d = {tx(b.get('d_m'), 3)}\ \text{{m}}"), fr(s.get("mu"), 4)),
+            ("Acier à l'ELU", im(r"A_s = \frac{M_u}{Z \, f_{su}}"), f"{fr(s.get('as_elu_cm2_m'), 2)} cm²/m"),
+            ("ELS : acier", im(rf"\sigma_{{st}} = {tx(els.get('sigma_st_mpa'), 1)}\ \text{{MPa}} \le {tx(els.get('sigma_st_lim_mpa'), 1)}\ \text{{MPa}}"),
+             etat(bool(els.get("sigma_st_ok", True)))),
+            ("Acier mis en place (haut)", _choix(s), f"{fr((s.get('ferraillage') or {}).get('as_fournie_cm2_m'), 2)} cm²/m"),
+            ("Ancrage des chapeaux", im(rf"\max \left( l \;;\; l_s \right) = \max \left( {tx(l)} \;;\; {tx(b.get('ls_m'))} \right)"),
+             f"{fr(b.get('prolongement_chapeaux_m'))} m"),
+            ("Effort tranchant", im(rf"\tau_u = {tx((b.get('cisaillement') or {}).get('tau_u_mpa'), 3)}\ \text{{MPa}} \le 0{{,}}05 \, f_{{c28}}"),
+             etat(bool((b.get("cisaillement") or {}).get("ok", True)))),
+        ]))
+        out.append("<p class='note'>" + " ".join(esc(x) for x in (b.get("dispositions") or [])) + "</p>")
+    return "".join(out)
+
+
 def quantites(inp: dict) -> str:
     out = [h2(7, "s7", "Quantités de béton et d'acier")]
     lot = inp.get("lot")
@@ -824,7 +908,8 @@ def quantites(inp: dict) -> str:
 def conclusion(inp: dict, bur: dict, date: str) -> str:
     reserves = []
     for fam, verif, nom in (("poteaux", ok_poteau, "Poteau"), ("poutres", ok_poutre, "Poutre"),
-                            ("semelles_isolees", ok_semelle, "Semelle"), ("voiles", ok_voile, "Voile")):
+                            ("semelles_isolees", ok_semelle, "Semelle"), ("voiles", ok_voile, "Voile"),
+                            ("dalles", lambda d: bool(d.get("verifie")), "Dalle"), ("balcons", lambda b: bool(b.get("verifie")), "Balcon")):
         for i, e in enumerate(inp.get(fam) or []):
             if not verif(e):
                 reserves.append(f"{nom} {_nom(e, i, nom[0])}")
@@ -868,6 +953,7 @@ def construire(inp: dict, bur: dict) -> str:
         section_poteaux(inp.get("poteaux") or [], m), section_poutres(inp.get("poutres") or [], m),
         section_semelles((inp.get("semelles_isolees") or []) + (inp.get("semelles_filantes") or []), m),
         section_voiles(inp.get("voiles") or [], m),
+        section_dalles(inp.get("dalles") or [], inp.get("balcons") or [], m),
         quantites(inp), conclusion(inp, bur, date),
     ]
     return (f'<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Note de calcul — {esc(titre)}</title>'

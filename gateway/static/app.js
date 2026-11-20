@@ -7,7 +7,7 @@ const state = {
   project: { projet: '', client: '', site: '', indice: 'A', objet: '', architecte: '', controle: '', laboratoire: '', phase: 'Exécution' },   // projet de l'utilisateur, vierge au démarrage
   robot: null,
   sismique: null,
-  poteaux: [], poutres: [], semelles_isolees: [], semelles_filantes: [], voiles: [],
+  poteaux: [], poutres: [], semelles_isolees: [], semelles_filantes: [], voiles: [], dalles: [], balcons: [],
   bureau: {},
 };
 
@@ -18,6 +18,7 @@ const MODULES = [
   { id: 'semelle', label: 'Semelles isolées', groupe: 'Éléments', ref: 'Méthode des bielles' },
   { id: 'semelle_filante', label: 'Semelles filantes', groupe: 'Éléments', ref: 'Méthode des bielles' },
   { id: 'voile', label: 'Voiles', groupe: 'Éléments', ref: 'BAEL B.8.4' },
+  { id: 'dalle', label: 'Dalles et balcons', groupe: 'Éléments', ref: 'BAEL A.8.2 · Annexe E3' },
   { id: 'sismique', label: 'Vérification sismique', groupe: 'Bâtiment', ref: 'RPS 2000 v2011' },
   { id: 'synthese', label: 'Synthèse de calcul', groupe: 'Livrables', ref: 'Note + plan DXF' },
   { id: 'bureau', label: 'Votre bureau', groupe: 'Réglages', ref: 'Page de garde et cartouche' },
@@ -32,6 +33,7 @@ const GLYPHES = {
   semelle: '<path d="M10.5 2.5v9 M15.5 2.5v9"/><path d="M10.5 11.5 3 15v6h20v-6l-7.5-3.5"/><path class="acier-l" d="M5 19h16"/>',
   semelle_filante: '<rect x="2" y="7" width="22" height="12"/><rect x="2" y="10.5" width="22" height="5" stroke-width="1"/><path class="acier-l" d="M6 7v12 M11 7v12 M16 7v12 M21 7v12" stroke-dasharray="0" opacity=".9"/>',
   voile: '<rect x="8" y="2" width="10" height="22"/><path class="acier-l" d="M10.5 3.5v19 M15.5 3.5v19"/><path d="M8.5 8h9 M8.5 13h9 M8.5 18h9" stroke-width=".9"/>',
+  dalle: '<path d="M2 9h22v5H2z"/><path d="M24 9h0"/><path d="M5 14v8 M21 14v8"/><path class="acier-l" d="M3 10.6h20"/><path d="M2 9 1 7.5" stroke-width=".9"/>',
   sismique: '<path d="M2 19.5h22"/><path d="M8 19.5V6h10v13.5 M8 11h10 M8 15.5h10"/><path class="acier-l" d="M2 23.2c1.6-1.8 2.9 1.8 4.5 0s2.9 1.8 4.5 0 2.9 1.8 4.5 0 2.9 1.8 4.5 0 1.9 1.2 2 0"/>',
   synthese: '<path d="M6 2h10l5 5v17H6z"/><path d="M16 2v5h5"/><path class="acier-l" d="M9 12h9"/><path d="M9 15.5h9 M9 19h6"/>',
   bureau: '<rect x="2" y="6" width="22" height="14"/><path d="M2 12.5h22 M15 6v14 M15 16.2h9"/><path class="acier-l" d="M4.5 9.2h8"/>',
@@ -193,7 +195,7 @@ function synthesisPayload() {
     robot: state.robot || undefined, sismique: state.sismique || undefined,
     poteaux: state.poteaux, poutres: state.poutres,
     semelles_isolees: state.semelles_isolees, semelles_filantes: state.semelles_filantes,
-    voiles: state.voiles, bureau: state.bureau,
+    voiles: state.voiles, dalles: state.dalles, balcons: state.balcons, bureau: state.bureau,
   };
 }
 function addToSynthesis(type, item) {
@@ -213,6 +215,7 @@ function renderSynthesis() {
   const groups = [
     ['poteaux', 'Poteaux'], ['poutres', 'Poutres'],
     ['semelles_isolees', 'Semelles isolées'], ['semelles_filantes', 'Semelles filantes'], ['voiles', 'Voiles'],
+    ['dalles', 'Dalles'], ['balcons', 'Balcons'],
   ];
   let html = '';
   if (state.robot) html += `<li><span><b>Modèle Robot</b> — ${esc(state.robot.nom)} <span class="badge">${esc(state.robot.mode || 'simulation')}</span></span><button data-del="robot">✕</button></li>`;
@@ -223,6 +226,8 @@ function renderSynthesis() {
       if (key === 'poteaux') desc = `${item.a_cm}×${item.b_cm} cm — Nu ${item.nu_kn} kN — ${item.ferraillage?.choix || ''}`;
       else if (key === 'poutres') desc = `b×h ${item.b_cm}×${item.h_cm} cm — ${item.mu_knm != null ? `Mu ${item.mu_knm} kN.m` : `μ ${item.mu}`} — ${item.ferraillage?.choix || ''}`;
       else if (key === 'voiles') desc = `L = ${item.longueur_m} m — σmax ${item.sigma_max_mpa} MPa`;
+      else if (key === 'dalles') desc = `${item.lx_m} × ${item.ly_m} m, h ${item.h_cm} cm — travée x ${item.resultats?.x_travee?.ferraillage?.choix || '—'}`;
+      else if (key === 'balcons') desc = `l = ${item.longueur_m} m, h ${item.h_cm} cm — nappe sup. ${item.nappe_superieure?.ferraillage?.choix || '—'}`;
       else desc = `A ${item.A_m} × B ${item.B_m} — H ${item.H_m} m — ${item.acier_x} / ${item.acier_y}`;
       const titre = item.nom ? `${item.nom}${item.niveau ? ' · ' + item.niveau : ''}` : `${label} #${i + 1}`;
       html += `<li><span><b>${esc(titre)}</b> — ${esc(desc)}</span><button data-del="${key}" data-idx="${i}">✕</button></li>`;
@@ -765,6 +770,82 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
   };
 }
 
+/* ============ MODULE: DALLES ET BALCONS ============ */
+const CH_DALLE = { lx_m: 'd-lx', ly_m: 'd-ly', h_cm: 'd-h', g_sup_kn_m2: 'd-g', q_kn_m2: 'd-q', fc28_mpa: 'd-fc' };
+const CH_BALCON = { longueur_m: 'b-l', h_cm: 'b-h', g_sup_kn_m2: 'b-g', q_kn_m2: 'b-q', garde_corps_kn_m: 'b-p',
+  poussee_kn_m: 'b-hh', hauteur_main_courante_m: 'b-hg', fc28_mpa: 'b-fc' };
+const FISSURATION_OPTIONS = [['peu_prejudiciable', 'Peu préjudiciable (intérieur)'], ['prejudiciable', 'Préjudiciable (extérieur)'],
+  ['tres_prejudiciable', 'Très préjudiciable (milieu agressif)']];
+const nappe = (r) => r ? `${r.ferraillage?.choix || '—'} (${r.as_retenue_cm2_m} cm²/m${r.gouverne ? ', ' + r.gouverne : ''})` : '—';
+function tabDalle() {
+  return {
+    html: `<h1 class="module-title">Dalles et balcons <small>dalle pleine sur appuis continus (BAEL A.8.2, Annexe E3) ; balcon en porte-à-faux, aciers principaux en nappe supérieure</small></h1>
+<div class="grid"><div class="card"><h2>Dalle pleine</h2>
+${row2(field('d-nom', "Repère", '', 'text', 'any', 'D1'), field('d-niveau', "Niveau", '', 'text', 'any', 'R+1'))}
+${row2(field('d-lx', "lx — petite portée (m)", '', 'number', 'any', 4.0), field('d-ly', "ly — grande portée (m)", '', 'number', 'any', 5.0))}
+${row2(field('d-h', "h — épaisseur (cm)", '', 'number', 'any', 16), field('d-fc', "fc28 (MPa)", 25))}
+${row2(field('d-g', "Charges permanentes hors poids propre (kN/m²)", '', 'number', 'any', 1.5), field('d-q', "Q — exploitation (kN/m²)", '', 'number', 'any', 1.5))}
+${row2(select('d-cont', "Continuité du panneau", [['rive', 'Panneau de rive'], ['intermediaire', 'Panneau intermédiaire'], ['isostatique', 'Panneau isolé (isostatique)']], 'rive'),
+       select('d-fis', "Fissuration", FISSURATION_OPTIONS, 'peu_prejudiciable'))}
+<div class="actions"><button class="btn gold" id="d-calc">Calculer la dalle</button>
+<button class="btn ghost small" id="d-add" disabled>Ajouter à la synthèse</button></div>
+</div>
+<div class="card"><h2>Résultat — dalle</h2><div class="result" id="d-res">${vide('dalle')}</div></div></div>
+<div class="grid"><div class="card"><h2>Balcon en porte-à-faux</h2>
+${row2(field('b-nom', "Repère", '', 'text', 'any', 'B1'), field('b-niveau', "Niveau", '', 'text', 'any', 'R+1'))}
+${row2(field('b-l', "l — porte-à-faux (m)", '', 'number', 'any', 1.5), field('b-h', "h — épaisseur à l'encastrement (cm)", '', 'number', 'any', 18))}
+${row2(field('b-g', "Revêtement, forme de pente, étanchéité (kN/m²)", '', 'number', 'any', 1.5), field('b-q', "Q — exploitation (kN/m²)", '', 'number', 'any', 3.5))}
+${row2(field('b-p', "Garde-corps ou acrotère en bout (kN/m)", '', 'number', 'any', 1.0), field('b-hh', "Poussée sur la main courante (kN/m)", '', 'number', 'any', 0.6))}
+${row2(field('b-hg', "Hauteur de la main courante (m)", 1.0), field('b-fc', "fc28 (MPa)", 25))}
+${select('b-fis', "Fissuration", FISSURATION_OPTIONS, 'prejudiciable')}
+<div class="actions"><button class="btn gold" id="b-calc">Calculer le balcon</button>
+<button class="btn ghost small" id="b-add" disabled>Ajouter à la synthèse</button></div>
+</div>
+<div class="card"><h2>Résultat — balcon</h2><div class="result" id="b-res">${vide('dalle')}</div></div></div>`,
+    init() {
+      const num = (id, defaut = 0) => ($(id).value.trim() === '' ? defaut : +$(id).value);
+      $('d-calc').addEventListener('click', async () => {
+        const resEl = $('d-res'); spinner(resEl);
+        try {
+          exiger(CH_DALLE, ['lx_m', 'ly_m', 'h_cm', 'g_sup_kn_m2', 'q_kn_m2']);
+          const payload = { lx_m: num('d-lx'), ly_m: num('d-ly'), h_cm: num('d-h'), g_sup_kn_m2: num('d-g'), q_kn_m2: num('d-q'),
+            continuite: $('d-cont').value, fissuration: $('d-fis').value, fc28_mpa: num('d-fc', 25), fe_mpa: 500 };
+          const r = await api('/api/engine/dalle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          const R = r.resultats;
+          resEl.innerHTML = VERDICTS.dalle(r) + kv([
+            ['Portée', r.un_sens ? `un seul sens (ρ = ${r.rho} < 0,4)` : `deux sens (ρ = ${r.rho})`],
+            ['pu / ps (kN/m²)', `${r.charges.pu_kn_m2} / ${r.charges.ps_kn_m2}`],
+            ['μx / μy', `${r.mu_x} / ${r.mu_y}`], ['M0x / M0y (kN·m/m)', `${r.m0x_knm} / ${r.m0y_knm}`, true],
+            ['Travée, sens x', nappe(R.x_travee)], ['Travée, sens y', nappe(R.y_travee)], ['Chapeaux sur appuis', nappe(R.appuis)],
+            ['τu (MPa)', `${r.cisaillement.tau_u_mpa} / lim ${r.cisaillement.tau_lim_mpa}`],
+          ]) + warns(r.remarques) + notes(r.hypotheses) + renderRaw(r);
+          $('d-add').disabled = false;
+          $('d-add').onclick = () => addToSynthesis('dalles', { ...r, nom: $('d-nom').value.trim() || undefined, niveau: $('d-niveau').value.trim() || undefined });
+        } catch (e) { afficherErreur(resEl, e, CH_DALLE); }
+      });
+      $('b-calc').addEventListener('click', async () => {
+        const resEl = $('b-res'); spinner(resEl);
+        try {
+          exiger(CH_BALCON, ['longueur_m', 'h_cm', 'g_sup_kn_m2', 'q_kn_m2']);
+          const payload = { longueur_m: num('b-l'), h_cm: num('b-h'), g_sup_kn_m2: num('b-g'), q_kn_m2: num('b-q'),
+            garde_corps_kn_m: num('b-p'), poussee_kn_m: num('b-hh'), hauteur_main_courante_m: num('b-hg', 1),
+            fissuration: $('b-fis').value, fc28_mpa: num('b-fc', 25), fe_mpa: 500 };
+          const r = await api('/api/engine/balcon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          resEl.innerHTML = VERDICTS.balcon(r) + kv([
+            ['Mu / Ms à l’encastrement (kN·m/m)', `${r.mu_knm} / ${r.ms_knm}`, true], ['Vu (kN/m)', r.vu_kn],
+            ['Nappe supérieure (principale)', nappe(r.nappe_superieure)], ['Répartition', nappe(r.repartition)],
+            ['Nappe inférieure', nappe(r.nappe_inferieure)],
+            ['Chapeaux prolongés dans la dalle (m)', r.prolongement_chapeaux_m],
+            ['τu (MPa)', `${r.cisaillement.tau_u_mpa} / lim ${r.cisaillement.tau_lim_mpa}`],
+          ]) + warns(r.remarques) + notes(r.dispositions) + renderRaw(r);
+          $('b-add').disabled = false;
+          $('b-add').onclick = () => addToSynthesis('balcons', { ...r, nom: $('b-nom').value.trim() || undefined, niveau: $('b-niveau').value.trim() || undefined });
+        } catch (e) { afficherErreur(resEl, e, CH_BALCON); }
+      });
+    }
+  };
+}
+
 /* ============ MODULE: BUREAU ============ */
 function tabBureau() {
   const b = state.bureau;
@@ -860,7 +941,7 @@ async function loadDemo() {
 
 /* ---------- construction des onglets ---------- */
 const builders = { projet: tabProjet, poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
-  semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile,
+  semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile, dalle: tabDalle,
   synthese: tabSynthese, bureau: tabBureau, complements: tabComplements };
 
 /* Les totaux montent de 0 à leur valeur quand les résultats arrivent (sauf « animations réduites »). */

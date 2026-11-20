@@ -52,5 +52,117 @@
     "tau_u_lim": "tau_u <= 0.15 * fc28 / gamma_b  (défaut usuel BET; sinon justification avec armatures transversales requise)",
     "At_st": "At/st >= Vu / (0.9 * d * fe_t / gamma_s)  (treillis à 45°, formule usuelles BAEL B.7.4)",
     "attention": "La vérification d'effort tranchant BAEL complète (article B.7.4, ferraillage minimal 0,4 b/ftj, espacements, etc.) doit être confirmée pour chaque ouvrage."
+  },
+  "dalles": {
+    "_source": "BAEL 91 rév. 99 — A.8.2 (dalles rectangulaires sur appuis continus), Annexe E3, A.5.2,2, A.8.2,42",
+    "rho_un_sens": {
+      "valeur": 0.4,
+      "_source": "A.8.2,41 : ρ = lx/ly < 0,4 → la dalle porte dans le seul sens lx (bande de 1 m, M0 = p lx²/8)"
+    },
+    "mu_elu": {
+      "mu_x": "1 / (8 (1 + 2,4 ρ³))",
+      "mu_y": "ρ³ (1,9 − 0,9 ρ)",
+      "nu": 0.0,
+      "_source": "Annexe E3 — expressions approchées des coefficients μx, μy (ν = 0 à l'ELU) ; écart ≤ 1,5 % avec le tableau sur 0,4–1 (à vérifier contre le tableau officiel)"
+    },
+    "my_min_sur_mx": {
+      "valeur": 0.25,
+      "_source": "A.8.2,41 : moment en travée dans le sens ly au moins égal au quart de celui du sens lx"
+    },
+    "continuite": {
+      "isostatique": {
+        "travee": 1.0,
+        "appui": 0.15,
+        "_note": "appui : moment forfaitaire de non-fragilité des chapeaux, pratique BET (à vérifier)"
+      },
+      "rive": {
+        "travee": 0.85,
+        "appui": 0.5,
+        "_note": "panneau de rive : Mt = 0,85 M0, appui intermédiaire 0,5 M0 (appui de rive 0,3 M0)"
+      },
+      "intermediaire": {
+        "travee": 0.75,
+        "appui": 0.5,
+        "_note": "panneau intermédiaire : Mt = 0,75 M0, appuis 0,5 M0"
+      },
+      "_source": "A.8.2,32 : Mt + (Mw + Me)/2 ≥ 1,25 M0, avec Mt ≤ M0 (0,75 + 0,5 = 1,25 ; 0,85 + (0,3 + 0,5)/2 = 1,25)"
+    },
+    "rho0_armatures_min": {
+      "fe400": 0.0008,
+      "fe500": 0.0006,
+      "_source": "B.7.4 (dalles) : Ay ≥ ρ0 b h ; Ax ≥ ρ0 (3 − ρ)/2 b h (à vérifier)"
+    },
+    "espacement_max_cm": {
+      "peu_prejudiciable": {
+        "principal": "min(3 h, 33)",
+        "repartition": "min(4 h, 45)"
+      },
+      "prejudiciable": {
+        "principal": "min(2 h, 25)",
+        "repartition": "min(3 h, 33)"
+      },
+      "tres_prejudiciable": {
+        "principal": "min(1,5 h, 20)",
+        "repartition": "min(2 h, 25)"
+      },
+      "_source": "A.8.2,42 (charges réparties ; h en cm) — valeurs préjudiciable / très préjudiciable : pratique BET (à vérifier)"
+    },
+    "diametre_max": {
+      "formule": "Ø ≤ h / 10",
+      "_source": "A.8.2,42"
+    },
+    "tau_u_lim_sans_armatures": {
+      "formule": "0,05 fc28",
+      "_source": "A.5.2,2 : dalle bétonnée sans reprise, pas d'armatures d'effort tranchant si τu ≤ 0,05 fc28"
+    },
+    "efforts_tranchants": {
+      "vx": "p lx ly / (2 ly + lx)",
+      "vy": "p lx / 3",
+      "_source": "Annexe E3 / pratique BAEL : réactions d'un panneau uniformément chargé (ρ ≥ 0,4)"
+    }
+  },
+  "balcons": {
+    "_source": "BAEL 91 rév. 99 (flexion simple, A.4.5, A.5.2,2) ; NF P 06-001 (charges d'exploitation)",
+    "moment_encastrement": {
+      "elu": "1,35 (g l²/2 + P l) + 1,5 (q l²/2 + H hg)",
+      "els": "g l²/2 + P l + q l²/2 + H hg",
+      "_source": "console encastrée : charge répartie g, q ; garde-corps P (kN/m) en bout ; poussée H (kN/m) à la hauteur hg"
+    },
+    "effort_tranchant": {
+      "elu": "1,35 (g l + P) + 1,5 q l"
+    },
+    "repartition_min": {
+      "valeur": 0.25,
+      "_source": "A.8.2,41 : armatures de répartition ≥ 1/4 des armatures principales"
+    },
+    "elancement_usuel": {
+      "h_sur_l_min": 0.1,
+      "_source": "prédimensionnement usuel h ≥ l/10 (à vérifier, n'est pas une vérification de flèche)"
+    },
+    "fissuration": {
+      "defaut": "prejudiciable",
+      "_source": "A.4.5,33 : ouvrage exposé aux intempéries"
+    }
+  },
+  "ancrage": {
+    "psi_s": {
+      "ha": 1.5,
+      "ronds_lisses": 1.0,
+      "_source": "A.6.1,21"
+    },
+    "tau_s": {
+      "formule": "0,6 ψs² ftj",
+      "_source": "A.6.1,21 : contrainte d'adhérence ultime"
+    },
+    "ls": {
+      "formule": "Ø fe / (4 τs)",
+      "_source": "A.6.1,23 : longueur de scellement droit"
+    }
+  },
+  "charges": {
+    "poids_volumique_ba_kn_m3": {
+      "valeur": 25.0,
+      "_source": "NF P 06-004 : béton armé 25 kN/m³"
+    }
   }
 }
