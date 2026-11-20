@@ -51,6 +51,40 @@ def connecter_robot(lancer: bool = False):
         return win32com.client.Dispatch("Robot.Application")
 
 
+# Codes d'erreur COM (HRESULT) les plus fréquents, traduits pour l'utilisateur
+ROBOT_ABSENT = (-2147221005, -2147221164)          # CO_E_CLASSSTRING, REGDB_E_CLASSNOTREG
+ROBOT_OCCUPE = (-2147418111, -2147417846)          # RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER
+ROBOT_FERME = (-2147023174, -2147417848, -2147023170)   # RPC_S_SERVER_UNAVAILABLE, RPC_E_DISCONNECTED, RPC_S_CALL_FAILED
+CONSEIL_EXCEL = "Sans Robot sur ce poste, téléchargez le modèle Excel, remplissez-le, puis importez-le."
+
+
+def code_com(e: Exception) -> Optional[int]:
+    """HRESULT d'une erreur pywin32 (com_error), sinon None."""
+    for v in (getattr(e, "hresult", None), (getattr(e, "args", None) or [None])[0]):
+        if isinstance(v, int):
+            return v
+    return None
+
+
+def expliquer_erreur_robot(e: Exception) -> str:
+    """Message lisible, avec la marche à suivre, pour une erreur de dialogue avec Robot."""
+    code = code_com(e)
+    if code in ROBOT_ABSENT:
+        return ("Robot Structural Analysis n'est pas installé sur ce poste, ou son interface de programmation "
+                "n'est pas enregistrée. Si Robot est installé, ouvrez-le une fois, puis réessayez ; sinon, réparez "
+                "son installation (Paramètres Windows › Applications › Autodesk Robot Structural Analysis › Modifier › Réparer). "
+                + CONSEIL_EXCEL)
+    if code in ROBOT_OCCUPE:
+        return ("Robot est occupé : une fenêtre ou un message y attend une réponse. Fermez-la dans Robot, "
+                "puis réessayez.")
+    if code in ROBOT_FERME:
+        return "Robot a été fermé ou ne répond plus pendant la lecture. Rouvrez Robot, puis réessayez."
+    if isinstance(e, ImportError):
+        return "Le dialogue avec Robot (pywin32) n'est pas disponible sur ce poste. " + CONSEIL_EXCEL
+    texte = str(e).strip() or e.__class__.__name__
+    return texte[:1].upper() + texte[1:]
+
+
 def processus_robot_ouvert() -> bool:
     """Un robot.exe tourne-t-il sur ce poste ? (Windows uniquement)"""
     import subprocess
@@ -72,7 +106,7 @@ def robot_disponible() -> tuple[bool, Optional[str]]:
     except Exception as e:
         if processus_robot_ouvert():
             return True, None          # la lecture passera par Dispatch, qui se rattachera à ce Robot
-        return False, str(e)
+        return False, expliquer_erreur_robot(e)
 
 
 def modele_simulation() -> dict:
@@ -118,7 +152,7 @@ def extraire_com(cas_elu: Optional[int] = None, cas_els: Optional[int] = None) -
         notes += ossature.get("remarques", [])
     except Exception as e:
         ossature = None
-        notes.append(f"Ossature (poteaux, poutres, semelles, voiles) non lue : {e}")
+        notes.append(f"Ossature (poteaux, poutres, semelles, voiles) non lue : {expliquer_erreur_robot(e)}")
     return {
         "nom": nom,
         "nb_niveaux": len(ossature["niveaux"]) if ossature else None,
@@ -204,7 +238,7 @@ def model(demo: bool = False):
         return m
     except Exception as e:
         return {"mode": "indisponible", "robot_com": {"disponible": True, "erreur_extraction": str(e)},
-                "notes": [f"Robot est ouvert mais le modèle n'a pas pu être lu : {e}. "
+                "notes": [f"Robot est ouvert mais le modèle n'a pas pu être lu. {expliquer_erreur_robot(e)} "
                           "Vérifiez qu'un projet est ouvert et que l'analyse a été lancée."]}
 
 
@@ -216,9 +250,12 @@ def ouvrir(inp: OuvrirInput):
     except ValueError as e:
         return {"mode": "indisponible", "notes": [f"Ouverture impossible : {e}."]}
     except Exception as e:
-        return {"mode": "indisponible", "robot_com": {"erreur": str(e)},
-                "notes": [f"Robot n'a pas pu ouvrir ce projet : {e}. Vérifiez que Robot Structural Analysis "
-                          "est installé avec sa licence sur ce poste."]}
+        if code_com(e) in ROBOT_ABSENT or isinstance(e, ImportError):
+            note = expliquer_erreur_robot(e)
+        else:
+            note = (f"Robot n'a pas pu ouvrir ce projet. {expliquer_erreur_robot(e)} Vérifiez aussi que la "
+                    "licence de Robot est active et que le fichier s'ouvre normalement dans Robot.")
+        return {"mode": "indisponible", "robot_com": {"erreur": str(e)}, "notes": [note]}
     try:
         m = extraire_com(inp.cas_elu, inp.cas_els)
         m["mode"] = "robot"
@@ -227,7 +264,7 @@ def ouvrir(inp: OuvrirInput):
         return m
     except Exception as e:
         return {"mode": "indisponible", "robot_com": {"erreur_extraction": str(e)},
-                "notes": etapes + [f"Le projet est ouvert mais n'a pas pu être lu : {e}."]}
+                "notes": etapes + [f"Le projet est ouvert mais n'a pas pu être lu. {expliquer_erreur_robot(e)}"]}
 
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

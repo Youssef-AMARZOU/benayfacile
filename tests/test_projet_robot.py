@@ -218,7 +218,7 @@ def test_lecture_com_sans_projet_ouvert(monkeypatch):
     robot = NS(Name="Autodesk Robot", Project=NS(IsActive=False))
     monkeypatch.setattr(rs, "connecter_robot", lambda lancer=False: robot)
     m = rs.model()
-    assert m["mode"] == "indisponible" and "aucun projet" in m["notes"][0]
+    assert m["mode"] == "indisponible" and "aucun projet" in m["notes"][0].lower()
 
 
 def _robot_avec_fichier(resultats_disponibles):
@@ -269,4 +269,26 @@ def test_robot_absent_a_l_ouverture(tmp_path, monkeypatch):
         raise OSError("Classe non enregistrée")
     monkeypatch.setattr(rs, "connecter_robot", pas_de_robot)
     m = rs.ouvrir(rs.OuvrirInput(chemin=str(f)))
-    assert m["mode"] == "indisponible" and "installé avec sa licence" in m["notes"][0]
+    assert m["mode"] == "indisponible" and "licence de Robot" in m["notes"][0]
+
+
+class ComError(Exception):
+    """Comme pywintypes.com_error : (hresult, texte, détail, argument)."""
+
+
+def test_robot_non_installe_message_clair(tmp_path, monkeypatch):
+    import robot_service as rs
+    f = tmp_path / "Projet.rtd"; f.write_bytes(b"rtd")
+    def classe_inconnue(lancer=False):
+        raise ComError(-2147221005, "Chaîne de classe incorrecte", None, None)
+    monkeypatch.setattr(rs, "connecter_robot", classe_inconnue)
+    note = rs.ouvrir(rs.OuvrirInput(chemin=str(f)))["notes"][0]
+    assert "n'est pas installé sur ce poste" in note and "modèle Excel" in note
+    assert "-2147221005" not in note and "Chaîne de classe" not in note
+
+
+def test_robot_occupe_ou_ferme():
+    import robot_service as rs
+    assert "occupé" in rs.expliquer_erreur_robot(ComError(-2147418111, "Appel rejeté", None, None))
+    assert "fermé" in rs.expliquer_erreur_robot(ComError(-2147023174, "Serveur RPC indisponible", None, None))
+    assert rs.expliquer_erreur_robot(RuntimeError("aucun projet")) == "Aucun projet"
