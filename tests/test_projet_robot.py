@@ -97,7 +97,9 @@ class Coll:
         return self.items[i - 1]
 
 
-def faux_projet():
+def faux_projet(cas=None, forces_par_cas=None):
+    """Faux projet calqué sur RobotOM : les résultats sont sous Structure.Results ;
+    le projet lui-même n'a pas d'attribut Results (comme IRobotProject)."""
     noeuds = [NS(Number=1, X=0.0, Y=0.0, Z=0.0), NS(Number=2, X=0.0, Y=0.0, Z=3.0),
               NS(Number=3, X=6.0, Y=0.0, Z=3.0), NS(Number=4, X=6.0, Y=0.0, Z=0.0)]
 
@@ -108,23 +110,22 @@ def faux_projet():
     forces = {1: dict(FX=-1.2e6, FZ=1e4, MY=3e4, MZ=1e4), 2: dict(FX=-1.0e6, FZ=1e4, MY=2e4, MZ=0.0),
               3: dict(FX=0.0, FZ=9e4, MY=1.2e5, MZ=0.0)}
 
+    coef = forces_par_cas or {7: 1.0, 8: 1 / 1.4}
+
     def valeur_barre(num, cas, pos):
-        f = forces[num]
-        k = 1.0 if cas == 7 else 1 / 1.4
-        return NS(**{c: v * k for c, v in f.items()})
+        return NS(**{c: v * coef[cas] for c, v in forces[num].items()})
 
     def reaction(noeud, cas):
-        k = 1.0 if cas == 7 else 1 / 1.4
-        return NS(FZ=1.2e6 * k, MX=0.0, MY=0.0)
+        return NS(FZ=1.2e6 * coef[cas], MX=0.0, MY=0.0)
 
     struct = NS(
-        Cases=NS(GetAll=lambda: Coll([NS(Number=1, Name="G"), NS(Number=7, Name="ELU"), NS(Number=8, Name="ELS")])),
+        Cases=NS(GetAll=lambda: Coll(cas or [NS(Number=1, Name="G"), NS(Number=7, Name="ELU"), NS(Number=8, Name="ELS")])),
         Nodes=NS(GetAll=lambda: Coll(noeuds)),
         Bars=NS(GetAll=lambda: Coll(barres)),
         Objects=NS(GetAll=lambda: Coll([])),
     )
-    results = NS(Bars=NS(Forces=NS(Value=valeur_barre)), Nodes=NS(Reactions=NS(Value=reaction)))
-    return NS(Structure=struct, Results=results)
+    struct.Results = NS(Available=True, Bars=NS(Forces=NS(Value=valeur_barre)), Nodes=NS(Reactions=NS(Value=reaction)))
+    return NS(Structure=struct)
 
 
 def test_extraction_com_portique():
@@ -141,6 +142,39 @@ def test_extraction_com_portique():
     # le lot calcule directement ce qui a été lu
     r = e.lot(e.LotInput(**{k: o[k] for k in ("poteaux", "poutres", "semelles", "voiles")}))
     assert r["resume"]["incomplet"] == 0 and r["resume"]["erreur"] == 0
+
+
+def test_resultats_lus_sous_structure_comme_robotom():
+    """IRobotProject n'a pas d'attribut Results : tout passe par Structure.Results."""
+    projet = faux_projet()
+    assert not hasattr(projet, "Results")
+    o = ro.extraire_ossature_com(projet)
+    assert o["poteaux"][0]["nu_kn"] == 1200.0 and not any("non lu" in r for r in o["remarques"])
+
+
+def test_combinaisons_reconstituees_depuis_g_et_q():
+    """Projet sans combinaisons : ELU = 1,35 G + 1,5 Q et ELS = G + Q, cas par cas."""
+    cas = [NS(Number=1, Name="PERM1", Nature=0, Type=0), NS(Number=2, Name="EXPL1", Nature=1, Type=0)]
+    o = ro.extraire_ossature_com(faux_projet(cas=cas, forces_par_cas={1: 0.5, 2: 0.2}))
+    p1 = next(p for p in o["poteaux"] if p["id"] == "P1")
+    assert p1["nu_kn"] == pytest.approx(1200 * (1.35 * 0.5 + 1.5 * 0.2), abs=0.1)
+    assert p1["ns_kn"] == pytest.approx(1200 * 0.7, abs=0.1)
+    assert any("1,35 G + 1,5 Q reconstituée" in r for r in o["remarques"])
+
+
+def test_combinaisons_en_anglais_et_cas_inconnus():
+    cas = [(1, "DL1", None, 0), (2, "LL1", None, 0), (5, "ULS", None, 1), (6, "SLS", None, 1)]
+    assert ro.combinaisons_de_calcul(cas)[:2] == ([(5, 1.0)], [(6, 1.0)])
+    elu, els, rem = ro.combinaisons_de_calcul([(1, "Vent", 2, 0)])
+    assert elu is None and els is None and len(rem) == 2
+
+
+def test_erreurs_de_lecture_regroupees():
+    projet = faux_projet()
+    projet.Structure.Results.Bars.Forces.Value = lambda *a: (_ for _ in ()).throw(RuntimeError("pas de résultats"))
+    o = ro.extraire_ossature_com(projet)
+    lignes = [r for r in o["remarques"] if r.startswith("Efforts des barres")]
+    assert len(lignes) == 1 and "3 élément(s)" in lignes[0]
 
 
 def test_poteau_section_trop_petite_est_signalee():
@@ -194,7 +228,7 @@ def _robot_avec_fichier(resultats_disponibles):
     projet.Name, projet.IsActive = "Residence.rtd", True
     projet.Open = lambda chemin: appels.append(("open", chemin))
     projet.CalcEngine = NS(Calculate=lambda: appels.append(("calcul",)) or 0)
-    projet.Structure.Results = NS(Available=resultats_disponibles)
+    projet.Structure.Results.Available = resultats_disponibles
     return NS(Name="Autodesk Robot", Project=projet), appels
 
 

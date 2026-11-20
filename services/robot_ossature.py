@@ -234,10 +234,16 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
 
 
 # ───────────────────────── extraction Robot (COM) ─────────────────────────
-# Constantes RobotOM : lues dans la bibliothèque de types (win32com makepy) quand elle
-# est générée ; les valeurs de repli sont celles de l'API Robot 2020+, à vérifier sur
-# chaque version installée.
+# Chemins de l'API RobotOM (Robot Structural Analysis 2020 à 2025) :
+#   projet.Structure.Nodes / Bars / Cases / Objects / Labels   (modèle)
+#   projet.Structure.Results.Bars.Forces.Value(barre, cas, x)  (efforts, N et N·m)
+#   projet.Structure.Results.Nodes.Reactions.Value(noeud, cas) (réactions)
+# Avec les classes générées par win32com (makepy), un attribut absent de la
+# bibliothèque de types lève une erreur : chaque accès suit donc un chemin
+# documenté, avec repli, et une lecture qui échoue est signalée, jamais inventée.
+
 def _const(nom: str, defaut: int) -> int:
+    """Constante RobotOM ; lue après connexion, quand la bibliothèque de types est chargée."""
     try:
         from win32com.client import constants  # type: ignore
         return int(getattr(constants, nom))
@@ -245,25 +251,81 @@ def _const(nom: str, defaut: int) -> int:
         return defaut
 
 
-I_OT_PANEL = _const("I_OT_PANEL", 5)
-I_LT_BAR_SECTION = _const("I_LT_BAR_SECTION", 1)
-I_LT_PANEL_THICKNESS = _const("I_LT_PANEL_THICKNESS", 18)
 POSITIONS = (0.0, 0.25, 0.5, 0.75, 1.0)
+MOTS_ELU = ("ELU", "ULS", "STR")
+MOTS_ELS = ("ELS", "SLS", "CAR", "SER")
+_G = re.compile(r"(^|[^A-Z])(G\d*|PERM\w*|DL|DEAD\w*|PP|POIDS\w*|CP|SELF\w*)([^A-Z]|$)")
+_Q = re.compile(r"(^|[^A-Z])(Q\d*|EXPL\w*|LL|LIVE\w*|SURCH\w*|IMPOS\w*)([^A-Z]|$)")
+
+# Une combinaison de calcul : liste de (numéro de cas, coefficient)
+Combinaison = List[Tuple[int, float]]
 
 
 def choisir_cas(cas: Sequence[Tuple[int, str]], cas_elu: Optional[int], cas_els: Optional[int]) -> Tuple[Optional[int], Optional[int]]:
-    """Numéros des combinaisons ELU / ELS : imposés, sinon reconnus par leur nom."""
-    def cherche(mot: str) -> Optional[int]:
+    """Numéros des combinaisons ELU / ELS : imposés, sinon reconnus par leur nom (FR ou EN)."""
+    def cherche(mots: Sequence[str]) -> Optional[int]:
         for num, nom in cas:
-            if mot in (nom or "").upper():
+            n = (nom or "").upper()
+            if any(re.search(rf"(^|[^A-Z]){m}([^A-Z]|$)", n) for m in mots):
                 return num
         return None
-    return (cas_elu or cherche("ELU"), cas_els or cherche("ELS"))
+    return (cas_elu or cherche(MOTS_ELU), cas_els or cherche(MOTS_ELS))
 
 
-def _iter_collection(col):
-    for i in range(1, col.Count + 1):
-        yield col.Get(i)
+def combinaisons_de_calcul(cas: Sequence[Tuple[int, str, Optional[int], Optional[int]]],
+                           cas_elu: Optional[int] = None, cas_els: Optional[int] = None
+                           ) -> Tuple[Optional[Combinaison], Optional[Combinaison], List[str]]:
+    """ELU et ELS à lire. `cas` : (numéro, nom, nature, type) de chaque cas Robot.
+
+    1. combinaisons imposées, ou nommées ELU / ELS (ULS / SLS) dans le projet ;
+    2. sinon, reconstituées à partir des cas simples, l'analyse étant linéaire :
+       ELU = 1,35 ΣG + 1,5 ΣQ, ELS = ΣG + ΣQ.
+    """
+    remarques: List[str] = []
+    elu, els = choisir_cas([(n, nom) for n, nom, _, _ in cas], cas_elu, cas_els)
+    if elu is not None and els is not None:
+        return [(elu, 1.0)], [(els, 1.0)], remarques
+    permanent, exploitation = _const("I_CN_PERMANENT", 0), _const("I_CN_EXPLOATATION", 1)
+    simple = _const("I_CT_SIMPLE", 0)
+    g, q = [], []
+    for num, nom, nature, typ in cas:
+        if typ is not None and typ != simple:
+            continue
+        n = (nom or "").upper()
+        if _G.search(n) or (nature == permanent and not _Q.search(n)):
+            g.append(num)
+        elif _Q.search(n) or nature == exploitation:
+            q.append(num)
+    if not g:
+        if elu is None:
+            remarques.append("Aucune combinaison ELU ni cas permanent G reconnu : indiquez le numéro de la combinaison ELU.")
+        if els is None:
+            remarques.append("Aucune combinaison ELS ni cas permanent G reconnu : indiquez le numéro de la combinaison ELS.")
+        return ([(elu, 1.0)] if elu else None), ([(els, 1.0)] if els else None), remarques
+    noms = {n: nom for n, nom, _, _ in cas}
+    detail = "G = " + " + ".join(noms[n] for n in g) + ("" if not q else " ; Q = " + " + ".join(noms[n] for n in q))
+    if elu is None:
+        remarques.append(f"Pas de combinaison ELU dans le projet : 1,35 G + 1,5 Q reconstituée ({detail}).")
+    if els is None:
+        remarques.append(f"Pas de combinaison ELS dans le projet : G + Q reconstituée ({detail}).")
+    elu_c = [(elu, 1.0)] if elu else [(n, 1.35) for n in g] + [(n, 1.5) for n in q]
+    els_c = [(els, 1.0)] if els else [(n, 1.0) for n in g] + [(n, 1.0) for n in q]
+    return elu_c, els_c, remarques
+
+
+def _typer(obj, interface: str):
+    """Objet d'une collection RobotOM vu avec son interface (IRobotBar…) ; sinon tel quel."""
+    try:
+        from win32com.client import CastTo  # type: ignore
+        return CastTo(obj, interface)
+    except Exception:
+        return obj
+
+
+def _iter_collection(col, interface: Optional[str] = None):
+    for i in range(1, int(col.Count) + 1):
+        o = col.Get(i)
+        yield _typer(o, interface) if interface else o
 
 
 def _label(objet, type_label: int) -> str:
@@ -273,59 +335,163 @@ def _label(objet, type_label: int) -> str:
         return ""
 
 
+def serveur_resultats(projet):
+    """IRobotResultServer : Structure.Results (l'API n'en expose pas au niveau du projet)."""
+    for chemin in (lambda: projet.Structure.Results, lambda: projet.Results):
+        try:
+            r = chemin()
+            if r is not None:
+                return r
+        except Exception:
+            continue
+    raise RuntimeError("résultats inaccessibles dans ce projet Robot")
+
+
+class _Erreurs:
+    """Regroupe les lectures en échec : un message par sorte, avec un exemple."""
+
+    def __init__(self):
+        self.par_sorte: Dict[str, List[str]] = {}
+
+    def note(self, sorte: str, qui: str, e: Exception):
+        self.par_sorte.setdefault(sorte, []).append(f"{qui} ({e})")
+
+    def remarques(self) -> List[str]:
+        out = []
+        for sorte, l in self.par_sorte.items():
+            out.append(f"{sorte} : {len(l)} élément(s) non lu(s), par exemple {l[0]}." if len(l) > 1 else f"{sorte} : {l[0]}.")
+        return out
+
+
+def _combiner(lire, combinaison: Optional[Combinaison], champs: Sequence[str]) -> Optional[Dict[str, float]]:
+    """Somme Σ coef · valeur, champ par champ (analyse linéaire)."""
+    if not combinaison:
+        return None
+    total = dict.fromkeys(champs, 0.0)
+    for num, coef in combinaison:
+        v = lire(num)
+        for c in champs:
+            total[c] += coef * float(getattr(v, c))
+    return total
+
+
+def _points_panneau(obj) -> List[Tuple[float, float, float]]:
+    """Sommets du contour d'un panneau, par les chemins de l'API connus selon les versions."""
+    def depuis(col, attr_point=None):
+        pts = []
+        for i in range(1, int(col.Count) + 1):
+            p = col.Get(i)
+            if attr_point:
+                p = getattr(_typer(p, "IRobotGeoSegment"), attr_point)
+            p = _typer(p, "IRobotGeoPoint3D")
+            pts.append((float(p.X), float(p.Y), float(p.Z)))
+        return pts
+
+    essais = (
+        lambda: depuis(_typer(obj.Main.Geometry, "IRobotGeoContour").Segments, "P1"),
+        lambda: depuis(_typer(obj.Main.Geometry, "IRobotGeoPolyline").Segments, "P1"),
+        lambda: depuis(obj.Main.DefPoints),
+    )
+    for essai in essais:
+        try:
+            pts = essai()
+            if len(pts) >= 3:
+                return pts
+        except Exception:
+            continue
+    return []
+
+
+def _section_barre(barre, struct, type_section: int) -> Tuple[str, Optional[Tuple[float, float]]]:
+    """Nom de la section et (b, h) en cm : depuis le nom, sinon depuis les données de la section."""
+    nom = _label(barre, type_section)
+    dims = dimensions_section(nom)
+    if dims or not nom:
+        return nom, dims
+    try:   # section béton nommée librement (« POT1 ») : dimensions lues dans ses données (m)
+        lab = struct.Labels.Get(type_section, nom)
+        data = _typer(lab.Data, "IRobotBarSectionData")
+        conc = _typer(data.Concrete, "IRobotBarSectionConcreteData")
+        for b_, h_ in (("I_BSCDV_BEAM_B", "I_BSCDV_BEAM_H"), ("I_BSCDV_COL_B", "I_BSCDV_COL_H")):
+            b, h = conc.GetValue(_const(b_, -1)), conc.GetValue(_const(h_, -1))
+            if b and h:
+                return nom, (round(float(b) * 100, 1), round(float(h) * 100, 1))
+    except Exception:
+        pass
+    return nom, None
+
+
 def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Optional[int] = None) -> dict:
     """Lit le projet Robot ouvert. Chaque élément illisible est signalé, pas inventé."""
     struct = projet.Structure
-    resultats = projet.Results
+    resultats = serveur_resultats(projet)
+    t_section = _const("I_LT_BAR_SECTION", 1)
+    t_epaisseur = _const("I_LT_PANEL_THICKNESS", 18)
+    erreurs = _Erreurs()
     remarques: List[str] = []
 
     cas = []
-    for c in _iter_collection(struct.Cases.GetAll()):
-        cas.append((int(c.Number), str(c.Name)))
-    elu, els = choisir_cas(cas, cas_elu, cas_els)
-    if elu is None:
-        remarques.append("Aucune combinaison « ELU » trouvée : indiquez son numéro (cas_elu).")
-    if els is None:
-        remarques.append("Aucune combinaison « ELS » trouvée : indiquez son numéro (cas_els).")
+    for c in _iter_collection(struct.Cases.GetAll(), "IRobotCase"):
+        nature = typ = None
+        try:
+            nature = int(c.Nature)
+        except Exception:
+            pass
+        try:
+            typ = int(c.Type)
+        except Exception:
+            pass
+        cas.append((int(c.Number), str(c.Name), nature, typ))
+    comb_elu, comb_els, rem_cas = combinaisons_de_calcul(cas, cas_elu, cas_els)
+    remarques += rem_cas
 
     noeuds: Dict[int, Tuple[float, float, float]] = {}
-    for n in _iter_collection(struct.Nodes.GetAll()):
-        noeuds[int(n.Number)] = (float(n.X), float(n.Y), float(n.Z))
+    for n in _iter_collection(struct.Nodes.GetAll(), "IRobotNode"):
+        try:
+            noeuds[int(n.Number)] = (float(n.X), float(n.Y), float(n.Z))
+        except Exception as e:
+            erreurs.note("Nœuds", "nœud ?", e)
+    if not noeuds:
+        raise RuntimeError("le projet ne contient aucun nœud lisible")
     niveaux = niveaux_depuis_z([p[2] for p in noeuds.values()])
     trame_x = niveaux_depuis_z([p[0] for p in noeuds.values()], tol=0.10)
     trame_y = niveaux_depuis_z([p[1] for p in noeuds.values()], tol=0.10)
 
-    def efforts_barre(num: int, cas_num: Optional[int]) -> Optional[dict]:
-        if cas_num is None:
+    efforts = resultats.Bars.Forces
+    reactions = resultats.Nodes.Reactions
+
+    def efforts_barre(num: int, comb: Optional[Combinaison]) -> Optional[dict]:
+        if not comb:
             return None
         fx = fz = my = mz = 0.0
         for pos in POSITIONS:
-            f = resultats.Bars.Forces.Value(num, cas_num, pos)
-            fx = max(fx, abs(f.FX)); fz = max(fz, abs(f.FZ))
-            my = max(my, abs(f.MY)); mz = max(mz, abs(f.MZ))
+            f = _combiner(lambda c: efforts.Value(num, c, pos), comb, ("FX", "FZ", "MY", "MZ"))
+            fx = max(fx, abs(f["FX"])); fz = max(fz, abs(f["FZ"]))
+            my = max(my, abs(f["MY"])); mz = max(mz, abs(f["MZ"]))
         return {"n": fx / 1e3, "v": fz / 1e3, "my": my / 1e3, "mz": mz / 1e3}   # N → kN
 
     poteaux, poutres, pieds = [], [], {}
-    for barre in _iter_collection(struct.Bars.GetAll()):
-        num = int(barre.Number)
+    inclinees = []
+    for barre in _iter_collection(struct.Bars.GetAll(), "IRobotBar"):
         try:
+            num = int(barre.Number)
             p1, p2 = noeuds[int(barre.StartNode)], noeuds[int(barre.EndNode)]
-        except KeyError:
+        except Exception as e:
+            erreurs.note("Barres", "barre ?", e)
             continue
         genre = classer_barre(p1, p2)
         if genre is None:
-            remarques.append(f"Barre {num} inclinée : non traitée.")
+            inclinees.append(num)
             continue
-        section_nom = _label(barre, I_LT_BAR_SECTION)
-        dims = dimensions_section(section_nom)
+        section_nom, dims = _section_barre(barre, struct, t_section)
         bas = p1 if p1[2] <= p2[2] else p2
         niv = indice_niveau(bas[2], niveaux)
         longueur = math.dist(p1, p2)
         try:
-            u, s = efforts_barre(num, elu), efforts_barre(num, els)
+            u, s = efforts_barre(num, comb_elu), efforts_barre(num, comb_els)
         except Exception as e:
             u = s = None
-            remarques.append(f"Barre {num} : efforts illisibles ({e}).")
+            erreurs.note("Efforts des barres", f"barre {num}", e)
         if genre == "poteau":
             axe = libelle_axe(bas[0], bas[1], trame_x, trame_y)
             el = {"id": f"P{num}", "nom": f"P {axe}", "niveau": nom_niveau(niv), "axe": axe,
@@ -344,6 +510,8 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                   "mu_knm": round(u["my"], 1) if u else None, "ms_knm": round(s["my"], 1) if s else None,
                   "vu_kn": round(u["v"], 1) if u else None, "section_robot": section_nom}
             poutres.append(el)
+    if inclinees:
+        remarques.append(f"{len(inclinees)} barre(s) inclinée(s) non traitée(s), par exemple la barre {inclinees[0]}.")
 
     # semelles : réactions aux nœuds d'appui en pied des poteaux du niveau bas
     semelles = []
@@ -353,13 +521,14 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
         ns = nu = None
         mx = my = 0.0
         try:
-            if elu is not None:
-                r = resultats.Nodes.Reactions.Value(n_num, elu)
-                nu, mx, my = abs(r.FZ) / 1e3, abs(r.MX) / 1e3, abs(r.MY) / 1e3
-            if els is not None:
-                ns = abs(resultats.Nodes.Reactions.Value(n_num, els).FZ) / 1e3
+            r = _combiner(lambda c: reactions.Value(n_num, c), comb_elu, ("FZ", "MX", "MY"))
+            if r:
+                nu, mx, my = abs(r["FZ"]) / 1e3, abs(r["MX"]) / 1e3, abs(r["MY"]) / 1e3
+            r = _combiner(lambda c: reactions.Value(n_num, c), comb_els, ("FZ",))
+            if r:
+                ns = abs(r["FZ"]) / 1e3
         except Exception as e:
-            remarques.append(f"Nœud {n_num} : réactions illisibles ({e}).")
+            erreurs.note("Réactions d'appui", f"nœud {n_num}", e)
         semelles.append({"id": f"S{n_num}", "nom": f"S {pot['axe']}", "axe": pot["axe"],
                          "a_poteau_cm": pot["a_cm"], "b_poteau_cm": pot["b_cm"],
                          "ns_kn": round(ns, 1) if ns is not None else None,
@@ -369,13 +538,8 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
     # voiles : panneaux verticaux ; géométrie lue, efforts réduits à saisir (non exposés simplement par l'API)
     voiles = []
     try:
-        panneaux = struct.Objects.GetAll()
-        for i in range(1, panneaux.Count + 1):
-            obj = panneaux.Get(i)
-            if int(getattr(obj, "ObjectType", -1)) != I_OT_PANEL:
-                continue
-            pts = [(float(p.X), float(p.Y), float(p.Z)) for p in _iter_collection(obj.Main.DefPoints)] \
-                if hasattr(obj.Main, "DefPoints") else []
+        for obj in _iter_collection(struct.Objects.GetAll(), "IRobotObjObject"):
+            pts = _points_panneau(obj)
             if len(pts) < 3:
                 continue
             zs = [p[2] for p in pts]
@@ -385,23 +549,28 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
             voiles.append({"id": f"V{obj.Number}", "nom": f"V {obj.Number}",
                            "niveau": nom_niveau(indice_niveau(min(zs), niveaux)),
                            "longueur_m": round(horiz, 2),
-                           "ep_cm": epaisseur_depuis_nom(_label(obj, I_LT_PANEL_THICKNESS)),
+                           "ep_cm": epaisseur_depuis_nom(_label(obj, t_epaisseur)),
                            "n_kn": None, "m_knm": None, "v_kn": None})
         if voiles:
             remarques.append("Voiles : géométrie lue dans Robot ; saisissez N, M, V (résultats réduits) avant calcul.")
     except Exception as e:
         remarques.append(f"Panneaux : lecture impossible ({e}).")
 
-    for el in poteaux + poutres:
-        if el.get("a_cm", el.get("b_cm")) is None:
-            remarques.append(f"{el['nom']} : section « {el.get('section_robot') or '?'} » non reconnue.")
-            break
+    remarques += erreurs.remarques()
+    sans_section = [el for el in poteaux + poutres if el.get("a_cm", el.get("b_cm")) is None]
+    if sans_section:
+        el = sans_section[0]
+        remarques.append(f"{len(sans_section)} élément(s) dont la section n'est pas reconnue, par exemple {el['nom']} "
+                         f"(« {el.get('section_robot') or '?'} ») : saisissez leurs dimensions.")
+    if not (poteaux or poutres or voiles):
+        remarques.append("Aucun poteau, poutre ni voile reconnu dans ce modèle.")
 
     oss = {"poteaux": poteaux, "poutres": poutres, "semelles": semelles, "voiles": voiles,
            "niveaux": [nom_niveau(i) for i in range(max(len(niveaux) - 1, 1))],
            "trame_x_m": trame_x, "trame_y_m": trame_y,
-           "source": "robot", "cas_elu": elu, "cas_els": els,
-           "cas": [{"numero": n, "nom": nom} for n, nom in cas],
+           "source": "robot", "cas_elu": comb_elu[0][0] if comb_elu and len(comb_elu) == 1 else None,
+           "cas_els": comb_els[0][0] if comb_els and len(comb_els) == 1 else None,
+           "cas": [{"numero": n, "nom": nom} for n, nom, _, _ in cas],
            "hypotheses": ["Efforts : enveloppe des valeurs absolues sur 5 sections par barre.",
                           "lf = 0,7·l0 pour les poteaux (à adapter si nécessaire)."],
            "remarques": remarques}
