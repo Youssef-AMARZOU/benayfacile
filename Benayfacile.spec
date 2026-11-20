@@ -5,7 +5,7 @@
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hidden = (
-    ["robot_service", "robot_ossature", "excel_report", "plans_ferraillage", "import_excel", "note_calcul", "tex_mathml", "engine_service", "dxf_service", "report_service", "common", "app"]
+    ["robot_service", "robot_ossature", "excel_report", "plans_ferraillage", "import_excel", "complements", "note_calcul", "tex_mathml", "engine_service", "dxf_service", "report_service", "common", "app"]
     + collect_submodules("uvicorn")
     + collect_submodules("webview")                                   # fenêtre native (pywebview)
     + ["win32com", "win32com.client", "pythoncom", "pywintypes"]      # pilotage Robot (si pywin32 installé)

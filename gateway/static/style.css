@@ -364,6 +364,17 @@ table.lot td.num { font-family: var(--police-titre); font-variant-numeric: tabul
 table.lot tr:hover td { background: var(--survol-leger); }
 table.lot tr.st-a_revoir td, table.lot tr.st-erreur td, table.lot tr.st-incomplet td { background: var(--armature-voile); }
 .etat { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+/* Compléments : un logiciel par carte, pastille d'état, liens officiels */
+.grid.complements { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: 14px; }
+.complement-tete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.complement-tete h2 { margin-bottom: 8px; }
+.pastille { flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.pastille.presente { color: var(--verifie); }
+.pastille.absente { color: var(--non-verifie); }
+.complement .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.complement a.btn { text-decoration: none; }
+.complement a.btn.gold, .complement a.btn.gold:visited { color: var(--sur-accent); }
+.complement a.btn.ghost, .complement a.btn.ghost:visited { color: var(--graphite); }
 .etat.verifie { color: var(--verifie); }
 .etat.a_revoir, .etat.erreur { color: var(--non-verifie); }
 .etat.incomplet { color: var(--attention); }

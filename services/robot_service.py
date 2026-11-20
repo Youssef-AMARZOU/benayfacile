@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from robot_ossature import extraire_ossature_com, ossature_simulation
 from import_excel import creer_modele, lire_classeur
+from complements import detecter as detecter_complements
 
 HERE = pathlib.Path(__file__).resolve().parent
 # BNAY_DATA : dossier de données inscriptible (fixé par le lanceur .exe)
@@ -170,6 +171,12 @@ def health():
     ok, err = robot_disponible()
     return {"service": "robot", "status": "ok", "robot_com_disponible": ok,
             "detail": err if err else "Robot pilotable via COM", "mode_defaut": "simulation si COM indisponible"}
+
+
+@app.get("/complements")
+def complements():
+    """Logiciels externes utiles (Robot, tableur, lecteur DXF) : présents ou non sur ce poste."""
+    return {"complements": detecter_complements()}
 
 
 class OuvrirInput(BaseModel):
