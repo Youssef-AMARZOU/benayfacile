@@ -221,7 +221,7 @@ def _insecable(html_tableau: str, nb_lignes: int) -> str:
     return f'<div class="bloc">{html_tableau}</div>' if nb_lignes <= LIGNES_INSECABLES else html_tableau
 
 
-_INSECABLE = re.compile(r"\d+ HA\d+|\d+(?:,\d+)? × \d+(?:,\d+)?|\S+ à \S+")
+_INSECABLE = re.compile(r"\d+ HA\d+|HA\d+ e=\d+|\d+(?:,\d+)? × \d+(?:,\d+)?|\S+ à \S+")
 
 
 def _cellule(v) -> str:
@@ -780,6 +780,14 @@ def section_voiles(liste: List[dict], m: dict) -> str:
     return "".join(out)
 
 
+def _fleche(e: dict) -> Tuple[str, str, str]:
+    """Ligne d'exemple : conditions de dispense du calcul de flèche (valeur / limite)."""
+    f = e.get("fleche") or {}
+    cond = " ; ".join(f"{c['nom']} : {fr(c['valeur'], 4)} / {fr(c['limite'], 4)}" for c in f.get("conditions") or [])
+    return (f"Flèche ({esc(f.get('article') or '—')})", esc(cond or "—"),
+            "Dispensée" if f.get("dispense") else "<b>À calculer</b>")
+
+
 def _choix(r: Optional[dict]) -> str:
     f = (r or {}).get("ferraillage") or {}
     return esc(f.get("choix") or "—")
@@ -797,18 +805,20 @@ def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
                       r"\mu_x = \frac{1}{8 \left( 1 + 2{,}4 \, \rho^3 \right)} \;,\qquad \mu_y = \rho^3 \left( 1{,}9 - 0{,}9 \, \rho \right) \ge 0{,}25"))
         out.append("<p>Les moments en travée et sur appuis tiennent compte de la continuité du panneau, avec "
                    + im(r"M_t + \frac{M_w + M_e}{2} \ge 1{,}25 \, M_0") + " (A.8.2,32). Les dalles sont sans armatures d'effort "
-                   "tranchant lorsque " + im(r"\tau_u \le 0{,}05 \, f_{c28}") + " (A.5.2,2).</p>")
+                   "tranchant lorsque " + im(r"\tau_u \le 0{,}05 \, f_{c28}") + " (A.5.2,2). Le calcul de la flèche est dispensé si "
+                   + im(r"h / l_x \ge M_{tx} / (20 \, M_{0x})") + " et " + im(r"A_x / (b \, d) \le 2 / f_e")
+                   + " (B.7.5) ; sinon, la dalle est signalée et sa flèche doit être calculée.</p>")
         lignes = []
         for i, d in enumerate(dalles):
             r = d.get("resultats") or {}
-            lignes.append([esc(_nom(d, i, "D")), esc(d.get("niveau") or "—"),
+            lignes.append([esc(d.get("nom") or f"D{i + 1}"), esc(d.get("niveau") or "—"),
                            f"{fr(d.get('lx_m'))} × {fr(d.get('ly_m'))}", fr(d.get("h_cm"), 0), fr(d.get("rho"), 2),
                            fr((d.get("charges") or {}).get("pu_kn_m2"), 2), fr(d.get("m0x_knm"), 2),
                            _choix(r.get("x_travee")), _choix(r.get("y_travee")), _choix(r.get("appuis")), etat(bool(d.get("verifie")))])
-        out.append(tableau(["Repère", "Niveau", ent(im(r"l_x \times l_y"), "m"), ent("h", "cm"), im(r"\rho"), ent(im("p_u"), "kN/m²"),
+        out.append(tableau(["Repère", "Niv.", ent(im(r"l_x \times l_y"), "m"), ent("h", "cm"), im(r"\rho"), ent(im("p_u"), "kN/m²"),
                             ent(im("M_{0x}"), "kN·m/m"), "Travée x", "Travée y", "Chapeaux", "État"],
                            lignes, ["", "", "c", "n", "n", "n", "n", "", "", "", "c"],
-                           largeurs=[7, 7, 11, 5, 6, 8, 9, 12, 12, 12, 11], titre="Dalles pleines"))
+                           largeurs=[8, 6, 11, 5, 5, 7, 8, 12, 12, 12, 14], titre="Dalles pleines"))
         d = max(dalles, key=lambda x: x.get("m0x_knm") or 0)
         r = d.get("resultats") or {}
         x = r.get("x_travee") or {}
@@ -822,7 +832,8 @@ def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
             ("Moment réduit", im(rf"\mu = \frac{{M_{{tx}}}}{{b \, d^2 \, f_{{bu}}}} \;,\; d = {tx(x.get('d_m'), 3)}\ \text{{m}}"), fr(x.get("mu"), 4)),
             ("Acier à l'ELU", im(r"A_s = \frac{M_{tx}}{Z \, f_{su}}"), f"{fr(x.get('as_elu_cm2_m'), 2)} cm²/m"),
             ("Acier minimal", im(r"A_{\min} = \max \left( \rho_0 \, \frac{3 - \rho}{2} \, b \, h \;;\; 0{,}23 \, b \, d \, \frac{f_{t28}}{f_e} \right)"), f"{fr(x.get('as_min_cm2_m'), 2)} cm²/m"),
-            ("Acier mis en place", _choix(x), etat(bool(d.get("verifie")))),
+            ("Acier mis en place", _choix(x), f"{fr((x.get('ferraillage') or {}).get('as_fournie_cm2_m'), 2)} cm²/m"),
+            _fleche(d),
         ]))
     if balcons:
         out.append("<p>Les balcons sont calculés comme des consoles encastrées, par bande de 1 m. Les aciers principaux sont "
@@ -833,7 +844,7 @@ def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
                       r"V_u = 1{,}35 \left( g \, l + P \right) + 1{,}5 \, q \, l"))
         lignes = []
         for i, b in enumerate(balcons):
-            lignes.append([esc(_nom(b, i, "B")), esc(b.get("niveau") or "—"), fr(b.get("longueur_m")), fr(b.get("h_cm"), 0),
+            lignes.append([esc(b.get("nom") or f"B{i + 1}"), esc(b.get("niveau") or "—"), fr(b.get("longueur_m")), fr(b.get("h_cm"), 0),
                            fr(b.get("mu_knm"), 2), fr(b.get("vu_kn"), 2), _choix(b.get("nappe_superieure")), _choix(b.get("repartition")),
                            fr(b.get("prolongement_chapeaux_m")), etat(bool(b.get("verifie")))])
         out.append(tableau(["Repère", "Niveau", ent("l", "m"), ent("h", "cm"), ent(im("M_u"), "kN·m/m"), ent(im("V_u"), "kN/m"),
@@ -859,6 +870,7 @@ def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
              f"{fr(b.get('prolongement_chapeaux_m'))} m"),
             ("Effort tranchant", im(rf"\tau_u = {tx((b.get('cisaillement') or {}).get('tau_u_mpa'), 3)}\ \text{{MPa}} \le 0{{,}}05 \, f_{{c28}}"),
              etat(bool((b.get("cisaillement") or {}).get("ok", True)))),
+            _fleche(b),
         ]))
         out.append("<p class='note'>" + " ".join(esc(x) for x in (b.get("dispositions") or [])) + "</p>")
     return "".join(out)

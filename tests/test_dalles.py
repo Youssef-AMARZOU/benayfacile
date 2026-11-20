@@ -134,6 +134,33 @@ def test_routes_du_moteur():
     assert "fissuration" in str(err.value.detail)
 
 
+# ---------- flèche : conditions de dispense (B.7.5 / B.6.5,1) ----------
+def test_fleche_dalle_16_cm_non_dispensee(dalle):
+    # h/lx = 0,16 / 4 = 0,040 < Mtx/(20 M0x) = 0,85 / 20 = 0,0425 → flèche à calculer, dalle non vérifiée
+    f = dalle["fleche"]
+    assert f["article"] == "B.7.5" and not f["dispense"]
+    assert (f["conditions"][0]["valeur"], f["conditions"][0]["limite"]) == (0.04, 0.0425)
+    # Ax/(b d) = 1,52 / (100 × 13) = 0,00117 ≤ 2/500 = 0,004
+    assert f["conditions"][1]["ok"] and f["conditions"][1]["limite"] == 0.004
+    assert not dalle["verifie"] and any("Flèche" in r for r in dalle["remarques"])
+
+
+def test_fleche_dalle_18_cm_dispensee():
+    # h/lx = 0,18 / 4 = 0,045 ≥ 0,0425
+    r = D.dalle(D.DalleInput(lx_m=4, ly_m=5, h_cm=18, g_sup_kn_m2=1.5, q_kn_m2=1.5, continuite="rive"))
+    assert r["fleche"]["dispense"] and r["verifie"]
+
+
+def test_fleche_balcon(balcon):
+    # console : h/l = 0,18 / 1,5 = 0,12 ≥ 1/10 ; A/(b d) = 3,93 / (100 × 14,5) = 0,00271 ≤ 4,2/500 = 0,0084
+    f = balcon["fleche"]
+    assert f["article"] == "B.6.5,1" and f["dispense"]
+    assert [c["limite"] for c in f["conditions"]] == [0.0625, 0.1, 0.0084]
+    # l = 2,0 m, h = 15 cm : h/l = 0,075 < 0,1 → flèche à calculer, balcon non vérifié
+    r = D.balcon(D.BalconInput(longueur_m=2.0, h_cm=15, g_sup_kn_m2=1.5, q_kn_m2=3.5))
+    assert not r["fleche"]["dispense"] and not r["verifie"]
+
+
 # ---------- note de calcul ----------
 def test_note_section_dalles_et_balcons():
     import re

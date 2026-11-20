@@ -117,6 +117,37 @@ def longueur_scellement_m(d_mm: float, fe: float, fc28: float) -> float:
     return d_mm / 1000.0 * fe / (4.0 * tau_s)
 
 
+# ───────────────────────── flèche : conditions de dispense ─────────────────────────
+
+def fleche_dispense(cas: str, h_cm: float, l_m: float, mt: float, m0: float, as_cm2_m: float, d_m: float,
+                    fe_mpa: float) -> dict:
+    """Conditions du BAEL dispensant du calcul de la flèche.
+    cas = "dalle" (B.7.5, dalle portant dans les deux sens) ou "poutre" (B.6.5,1 : poutre, console, bande de dalle)."""
+    ref = _ref("fleche_dispense")
+    h_l = h_cm / 100.0 / l_m
+    taux = as_cm2_m / (100.0 * d_m * 100.0)            # A / (b d), b = 100 cm, d en cm
+    if cas == "dalle":
+        c = ref["dalle_deux_sens"]
+        conditions = [
+            {"nom": "h/lx ≥ Mtx/(20 M0x)", "valeur": round(h_l, 4), "limite": round(mt / (20.0 * m0), 4),
+             "ok": bool(h_l >= mt / (20.0 * m0))},
+            {"nom": "Ax/(b d) ≤ 2/fe", "valeur": round(taux, 5), "limite": round(c["a_sur_bd_max_x_fe"] / fe_mpa, 5),
+             "ok": bool(taux <= c["a_sur_bd_max_x_fe"] / fe_mpa)},
+        ]
+        article = "B.7.5"
+    else:
+        c = ref["poutre_et_console"]
+        conditions = [
+            {"nom": "h/l ≥ 1/16", "valeur": round(h_l, 4), "limite": c["h_sur_l_min"], "ok": bool(h_l >= c["h_sur_l_min"])},
+            {"nom": "h/l ≥ Mt/(10 M0)", "valeur": round(h_l, 4), "limite": round(mt / (10.0 * m0), 4),
+             "ok": bool(h_l >= mt / (10.0 * m0))},
+            {"nom": "A/(b d) ≤ 4,2/fe", "valeur": round(taux, 5), "limite": round(c["a_sur_bd_max_x_fe"] / fe_mpa, 5),
+             "ok": bool(taux <= c["a_sur_bd_max_x_fe"] / fe_mpa)},
+        ]
+        article = "B.6.5,1"
+    return {"article": article, "conditions": conditions, "dispense": all(x["ok"] for x in conditions)}
+
+
 # ───────────────────────── dalle pleine ─────────────────────────
 
 class DalleInput(BaseModel):
@@ -202,16 +233,21 @@ def dalle(inp: DalleInput) -> dict:
             remarques.append(f"{nom} : μ > μlim, aciers comprimés nécessaires ; augmentez l'épaisseur.")
     if not cisaillement["ok"]:
         remarques.append("τu > 0,05 fc28 : armatures d'effort tranchant nécessaires ou épaisseur à augmenter (A.5.2,2).")
-    if lx / (h / 100.0) > (20 if un_sens else 40) * (1.25 if inp.continuite != "isostatique" else 1.0):
-        remarques.append("Dalle élancée : vérifiez la flèche (BAEL B.6.5) ; le prédimensionnement usuel n'est pas respecté.")
+    xt = resultats["x_travee"]
+    fleche = fleche_dispense("poutre" if un_sens else "dalle", h, lx, k["travee"] * m0x, m0x,
+                             xt["ferraillage"]["as_fournie_cm2_m"] or xt["as_retenue_cm2_m"], dx, inp.fe_mpa)
+    if not fleche["dispense"]:
+        manquees = ", ".join(c["nom"] for c in fleche["conditions"] if not c["ok"])
+        remarques.append(f"Flèche : condition de dispense non satisfaite ({fleche['article']} : {manquees}) ; "
+                         "calculez la flèche (B.6.5,2) ou augmentez l'épaisseur.")
     return {
         "type": "dalle", "un_sens": un_sens, "rho": round(rho, 3), "lx_m": lx, "ly_m": ly, "h_cm": h,
         "charges": {"g_poids_propre_kn_m2": round(gpp, 2), "g_kn_m2": round(g, 2), "q_kn_m2": inp.q_kn_m2,
                     "pu_kn_m2": round(pu, 3), "ps_kn_m2": round(ps, 3)},
         "mu_x": round(mu_x, 4), "mu_y": round(mu_y, 4), "m0x_knm": round(m0x, 2), "m0y_knm": round(m0y, 2),
         "continuite": inp.continuite, "coefficients": {"travee": k["travee"], "appui": k["appui"]},
-        "espacements_max_cm": st, "resultats": resultats, "cisaillement": cisaillement,
-        "verifie": not remarques or all("élancée" in r for r in remarques),
+        "espacements_max_cm": st, "resultats": resultats, "cisaillement": cisaillement, "fleche": fleche,
+        "verifie": not remarques,
         "remarques": remarques,
         "hypotheses": ["Moments ELS pris proportionnels aux moments ELU (coefficients μ à ν = 0) : approché, à vérifier.",
                        "Panneau rectangulaire uniformément chargé, sans ouverture ni charge concentrée."],
@@ -271,9 +307,13 @@ def balcon(inp: BalconInput) -> dict:
         remarques.append("σbc > 0,6 fc28 à l'ELS : augmentez l'épaisseur.")
     if tau > tau_lim:
         remarques.append("τu > 0,05 fc28 : armatures d'effort tranchant nécessaires ou épaisseur à augmenter (A.5.2,2).")
-    alerte_elancement = h / 100.0 < _ref("balcons")["elancement_usuel"]["h_sur_l_min"] * l
-    if alerte_elancement:
-        remarques.append(f"h = {h:g} cm < l/10 = {l * 10:g} cm : balcon élancé, vérifiez la flèche en bout de console.")
+    # console : Mt = M0, d'où h/l ≥ 1/10 (B.6.5,1)
+    fleche = fleche_dispense("poutre", h, l, mu, mu, sup["ferraillage"]["as_fournie_cm2_m"] or sup["as_retenue_cm2_m"],
+                             d, inp.fe_mpa)
+    if not fleche["dispense"]:
+        manquees = ", ".join(c["nom"] for c in fleche["conditions"] if not c["ok"])
+        remarques.append(f"Flèche : h = {h:g} cm, l/10 = {l * 10:g} cm ; condition de dispense non satisfaite "
+                         f"(B.6.5,1 : {manquees}) ; calculez la flèche en bout de console ou augmentez l'épaisseur.")
     dispositions = [
         "Aciers principaux en nappe SUPÉRIEURE (zone tendue de la console) ; prévoir des distanciers pour les maintenir en place.",
         f"Prolonger les chapeaux dans la dalle intérieure d'au moins {prolongement:.2f} m (max(l, ls), ls = {ls:.2f} m) ; "
@@ -289,9 +329,9 @@ def balcon(inp: BalconInput) -> dict:
         "nappe_superieure": sup, "repartition": repartition, "nappe_inferieure": inferieur,
         "cisaillement": {"tau_u_mpa": round(tau, 3), "tau_lim_mpa": round(tau_lim, 2), "ok": bool(tau <= tau_lim)},
         "ls_m": round(ls, 2), "prolongement_chapeaux_m": round(prolongement, 2),
-        "espacements_max_cm": st, "dispositions": dispositions,
-        "verifie": not [r for r in remarques if "élancé" not in r],
+        "espacements_max_cm": st, "dispositions": dispositions, "fleche": fleche,
+        "verifie": not remarques,
         "remarques": remarques,
         "hypotheses": ["Console encastrée sur toute sa largeur, bande de 1 m ; charges uniformes.",
-                       "Flèche non calculée : à vérifier pour les consoles élancées."],
+                       "Flèche : conditions de dispense B.6.5,1 vérifiées ; si elles ne le sont pas, la flèche est à calculer."],
     }

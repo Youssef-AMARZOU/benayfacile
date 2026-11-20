@@ -164,5 +164,19 @@
       "valeur": 25.0,
       "_source": "NF P 06-004 : béton armé 25 kN/m³"
     }
+  },
+  "fleche_dispense": {
+    "_source": "BAEL 91 rév. 99 — conditions dispensant du calcul de la flèche ; à défaut, la flèche est à calculer (B.6.5,2)",
+    "dalle_deux_sens": {
+      "h_sur_lx": "≥ Mtx / (20 M0x)",
+      "a_sur_bd_max_x_fe": 2.0,
+      "_source": "B.7.5 : h/lx ≥ Mtx/(20 Mx) et Ax/(b dx) ≤ 2/fe (fe en MPa)"
+    },
+    "poutre_et_console": {
+      "h_sur_l_min": 0.0625,
+      "h_sur_l_moment": "≥ Mt / (10 M0)",
+      "a_sur_bd_max_x_fe": 4.2,
+      "_source": "B.6.5,1 : h/l ≥ 1/16, h/l ≥ Mt/(10 M0), A/(b0 d) ≤ 4,2/fe ; console : Mt = M0, d'où h/l ≥ 1/10 ; appliqué aussi à la dalle portant dans un seul sens (bande de 1 m) (à vérifier)"
+    }
   }
 }
