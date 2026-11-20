@@ -55,11 +55,11 @@ def test_formules_mathml_bien_formees_et_numerotees(note_r4):
     assert numeros == list(range(1, len(numeros) + 1)) and len(numeros) >= 8
 
 
-def test_polices_latin_modern_embarquees(note_r4):
+def test_police_des_formules_embarquee(note_r4):
     html, _ = note_r4
-    for famille in ("Latin Modern Roman", "Latin Modern Math"):
-        assert f'font-family: "{famille}"' in html
-    assert html.count("data:font/woff2;base64,") == 4
+    assert 'font-family: "Latin Modern Math"' in html          # formules : police mathématique embarquée
+    assert '"Segoe UI"' in html                                 # texte : police système sans empattement
+    assert html.count("data:font/woff2;base64,") == 1
     assert (RACINE / "services" / "polices" / "GUST-FONT-LICENSE.txt").exists()
 
 

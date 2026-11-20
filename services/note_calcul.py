@@ -43,14 +43,11 @@ def _police(nom: str) -> str:
 
 
 def polices_css() -> str:
-    """Latin Modern embarquée (licence GUST, voir polices/GUST-FONT-LICENSE.txt) : la note
-    garde son rendu LaTeX partout, y compris enregistrée ou imprimée en PDF."""
+    """Police des formules embarquée (Latin Modern Math, licence GUST, voir polices/GUST-FONT-LICENSE.txt) :
+    les formules gardent leur rendu partout, y compris en PDF. Le texte utilise la police système (Segoe UI)."""
     faces = []
     for famille, fichier, graisse, style in (
-            ("Latin Modern Roman", "lmroman10-regular.woff2", "normal", "normal"),
-            ("Latin Modern Roman", "lmroman10-bold.woff2", "bold", "normal"),
-            ("Latin Modern Roman", "lmroman10-italic.woff2", "normal", "italic"),
-            ("Latin Modern Math", "latinmodern-math.woff2", "normal", "normal")):
+            ("Latin Modern Math", "latinmodern-math.woff2", "normal", "normal"),):
         b64 = _police(fichier)
         if b64:
             faces.append(f'@font-face {{ font-family: "{famille}"; font-weight: {graisse}; font-style: {style}; '
@@ -293,98 +290,117 @@ def calcul(lignes: List[Tuple[str, str, str]]) -> str:
 
 
 CSS = r"""
-@page { size: A4; margin: 24mm 20mm 22mm 20mm;
-  @top-left { content: %(entete_g)s; font: italic 9pt "Latin Modern Roman", serif; vertical-align: bottom; padding-bottom: 2.5mm; border-bottom: .4pt solid #000; }
-  @top-right { content: %(entete_d)s; font: italic 9pt "Latin Modern Roman", serif; vertical-align: bottom; padding-bottom: 2.5mm; border-bottom: .4pt solid #000; }
-  @bottom-left { content: %(pied_g)s; font: 9pt "Latin Modern Roman", serif; vertical-align: top; padding-top: 3mm; }
-  @bottom-right { content: counter(page) " / " counter(pages); font: 9pt "Latin Modern Roman", serif; vertical-align: top; padding-top: 3mm; }
+:root { --marine: #17324d; --marine-2: #24507a; --or: #c49a3a; --texte: #1f2933; --gris: #5b6773;
+  --filet: #d3dae3; --fond: #f3f6f9; --ok: #1e6b34; --ok-fond: #e5f3e9; --ko: #b3261e; --ko-fond: #fbe9e7; }
+@page { size: A4; margin: 26mm 18mm 22mm 18mm;
+  @top-left { content: %(entete_g)s; font: 600 8.5pt "Segoe UI", Calibri, Arial, sans-serif; color: #17324d;
+    text-transform: uppercase; letter-spacing: .06em; vertical-align: bottom; padding-bottom: 3mm; border-bottom: 1.4pt solid #17324d; }
+  @top-right { content: %(entete_d)s; font: 8.5pt "Segoe UI", Calibri, Arial, sans-serif; color: #5b6773;
+    vertical-align: bottom; padding-bottom: 3mm; border-bottom: 1.4pt solid #17324d; }
+  @bottom-left { content: %(pied_g)s; font: 8pt "Segoe UI", Calibri, Arial, sans-serif; color: #5b6773;
+    vertical-align: top; padding-top: 3mm; border-top: .5pt solid #d3dae3; }
+  @bottom-center { content: "Document préparatoire — à valider par l'ingénieur signataire"; font: 8pt "Segoe UI", Calibri, Arial, sans-serif;
+    color: #5b6773; vertical-align: top; padding-top: 3mm; border-top: .5pt solid #d3dae3; }
+  @bottom-right { content: "Page " counter(page) " / " counter(pages); font: 600 8pt "Segoe UI", Calibri, Arial, sans-serif;
+    color: #17324d; vertical-align: top; padding-top: 3mm; border-top: .5pt solid #d3dae3; }
 }
-@page :first { margin: 16mm;
+@page :first { margin: 0;
   @top-left { content: none; border: none; } @top-right { content: none; border: none; }
-  @bottom-left { content: none; } @bottom-right { content: none; } }
+  @bottom-left { content: none; border: none; } @bottom-center { content: none; border: none; } @bottom-right { content: none; border: none; } }
 * { box-sizing: border-box; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { margin: 0; font: 10.5pt/1.38 "Latin Modern Roman", "Latin Modern Math", "CMU Serif", "Cambria", "Times New Roman", serif;
-  color: #000; font-kerning: normal; font-variant-ligatures: common-ligatures; }
-.ecran { max-width: 170mm; margin: 0 auto; padding: 12mm 0; }
+body { margin: 0; font: 9.75pt/1.45 "Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif; color: var(--texte);
+  font-variant-numeric: lining-nums; }
+.ecran { max-width: 174mm; margin: 0 auto; padding: 12mm 0; }
 @media print { .ecran { max-width: none; padding: 0; } }
 p { margin: 0 0 6pt; text-align: justify; hyphens: auto; }
-p + p { text-indent: 1.5em; }
-math { font-family: "Latin Modern Math", "Cambria Math", serif; font-size: 1.05em; }
-h2, h3, h4 { font-family: inherit; font-weight: bold; break-after: avoid; }
-h2 { font-size: 14.4pt; margin: 20pt 0 8pt; }
-h2 .num { display: inline-block; min-width: 1.6em; }
-h3 { font-size: 12pt; margin: 14pt 0 6pt; }
-h4 { font-size: 10.5pt; margin: 12pt 0 4pt; }
-ul { margin: 4pt 0 8pt; padding-left: 1.6em; } li { margin: 2pt 0; text-align: justify; }
-/* tableaux à la manière de booktabs : filets horizontaux seulement */
-table { width: 100%; border-collapse: collapse; margin: 6pt 0 12pt; font-size: 9.5pt; border-top: 1pt solid #000; border-bottom: 1pt solid #000; }
+b { font-weight: 600; color: var(--marine); }
+math { font-family: "Latin Modern Math", "Cambria Math", serif; font-size: 1.08em; color: #111; }
+h2, h3, h4 { font-weight: 600; break-after: avoid; color: var(--marine); }
+h2 { font-size: 14pt; margin: 4pt 0 10pt; padding: 0 0 4pt; border-bottom: 2pt solid var(--marine);
+  text-transform: uppercase; letter-spacing: .03em; }
+h2 .num { display: inline-block; min-width: 1.5em; color: var(--or); }
+h3 { font-size: 11.5pt; margin: 16pt 0 6pt; padding-left: 7pt; border-left: 3pt solid var(--or); }
+h4 { font-size: 10pt; margin: 12pt 0 5pt; color: var(--marine-2); }
+ul { margin: 4pt 0 8pt; padding-left: 1.4em; } li { margin: 2pt 0; text-align: justify; }
+li::marker { color: var(--or); }
+/* tableaux : en-tête plein, lignes alternées, filets fins */
+table { width: 100%; border-collapse: collapse; margin: 4pt 0 12pt; font-size: 8.75pt; border: .5pt solid var(--filet); }
 tr { break-inside: avoid; }
 thead { display: table-header-group; }
-th, td { padding: 2.5pt 6pt; vertical-align: top; text-align: left; border: none; }
-thead th { font-weight: bold; border-bottom: .5pt solid #000; }
+th, td { padding: 3pt 5pt; vertical-align: middle; text-align: left; border: none; }
+thead th { font-weight: 600; background: var(--marine); color: #fff; vertical-align: bottom; }
+thead th math { color: #fff; }
+tbody tr:nth-child(even) td { background: var(--fond); }
+tbody tr + tr td, tbody tr + tr th { border-top: .5pt solid var(--filet); }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
-thead th, thead th.n { white-space: normal; vertical-align: bottom; }
-th .u { font-weight: normal; font-size: 8.5pt; }
-caption { caption-side: top; text-align: center; font-size: 9.5pt; padding: 0 0 5pt; }
+thead th, thead th.n { white-space: normal; }
+th .u { font-weight: 400; font-size: 7.5pt; opacity: .85; }
+caption { caption-side: top; text-align: left; font-size: 8.5pt; font-weight: 600; color: var(--marine);
+  text-transform: uppercase; letter-spacing: .04em; padding: 0 0 4pt; }
 .bloc { break-inside: avoid; }   /* tableau court : jamais coupé entre deux pages */
 p:has(+ .bloc), p:has(+ .equation), .equation:has(+ .bloc), h3:has(+ .bloc), h3:has(+ p + .bloc),
 h2 + p { break-after: avoid; }   /* le texte qui l'annonce reste avec lui */
-thead { display: table-header-group; }   /* en-tête répété si le tableau continue page suivante */
 table.hyp td:nth-child(2) { text-align: center; }
 td.c, th.c { text-align: center; }
 .nw { white-space: nowrap; }
-table.kv th { width: 52%; font-weight: normal; }
-table.kv tr + tr th, table.kv tr + tr td { border-top: .25pt solid #c8c8c8; }
-table.calcul td { padding: 3pt 6pt; }
-table.calcul tr + tr td { border-top: .25pt solid #c8c8c8; }
-table.calcul td.des { width: 27%; font-style: italic; }
-table.calcul td.res { width: 22%; text-align: right; white-space: nowrap; }
-table.calcul math { math-style: normal; }   /* fractions en taille d'affichage, comme \displaystyle */
+table.kv th { width: 45%; font-weight: 600; color: var(--marine); background: var(--fond); }
+table.kv tbody tr:nth-child(even) td { background: none; }
+table.calcul { border-left: 3pt solid var(--marine); }
+table.calcul td { padding: 4pt 6pt; }
+table.calcul tbody tr:nth-child(even) td { background: none; }
+table.calcul td.des { width: 24%; font-weight: 600; color: var(--marine); background: var(--fond) !important; }
+table.calcul td.res { width: 20%; text-align: right; white-space: nowrap; font-weight: 600; }
+table.calcul math { math-style: normal; }   /* fractions en taille d'affichage */
 table.fixe { table-layout: fixed; }
 table.fixe td.el { overflow-wrap: anywhere; }
-.ok, .ko { white-space: nowrap; }
-.equation { display: flex; align-items: center; margin: 8pt 0 10pt; break-inside: avoid; }
+.equation { display: flex; align-items: center; margin: 8pt 0 10pt; padding: 6pt 10pt; break-inside: avoid;
+  background: var(--fond); border-left: 3pt solid var(--or); }
 .equation math { flex: 1; }
-.equation .no { width: 3em; text-align: right; }
-.ok { font-weight: bold; color: #1b5e20; } .ko { font-weight: bold; color: #b71c1c; }
-.note { font-size: 9pt; }
-.reserve { border-left: 2pt solid #b71c1c; padding: 4pt 0 4pt 10pt; margin: 8pt 0; }
+.equation .no { width: 3em; text-align: right; color: var(--gris); }
+.ok, .ko { display: inline-block; white-space: nowrap; font-weight: 600; font-size: .92em; padding: .5pt 6pt; border-radius: 8pt; }
+.ok { color: var(--ok); background: var(--ok-fond); } .ko { color: var(--ko); background: var(--ko-fond); }
+.note { font-size: 8.5pt; color: var(--gris); }
+.reserve { background: var(--ko-fond); border-left: 3pt solid var(--ko); padding: 6pt 10pt; margin: 8pt 0; }
 .saut { break-before: page; }
 
-/* page de garde, dans l'esprit d'un \begin{titlepage} */
-.garde { height: 264mm; display: flex; flex-direction: column; text-align: center; }
-.garde .bet { display: flex; gap: 8mm; align-items: center; justify-content: center; }
-.garde .bet img { max-height: 20mm; max-width: 40mm; }
-.garde .bet-nom { font-size: 14pt; font-weight: bold; font-variant: small-caps; letter-spacing: .04em; }
-.garde .bet-coord { font-size: 9pt; }
-.garde .filet { border-top: 1.2pt solid #000; border-bottom: .4pt solid #000; height: 3pt; margin: 12mm 0 10mm; }
-.garde .titre .t1 { font-size: 24.88pt; font-weight: bold; letter-spacing: .02em; }
-.garde .titre .t2 { font-size: 12pt; font-variant: small-caps; letter-spacing: .08em; margin-top: 3mm; }
-.garde .objet { font-size: 14pt; font-style: italic; margin: 10mm 10mm 0; }
-.garde .filet.bas { margin: 10mm 0 8mm; }
-.garde table.inter { width: 78%; margin: 0 auto; text-align: left; }
-.garde table.inter th { width: 45%; }
-.garde .pied { margin-top: auto; text-align: left; }
-.garde .visas { display: flex; gap: 6mm; margin-top: 4mm; }
-.garde .visa { flex: 1; border: .5pt solid #000; height: 28mm; padding: 2mm 3mm; font-size: 9pt; font-style: italic; position: relative; }
+/* page de garde */
+.garde { height: 296mm; display: flex; flex-direction: column; overflow: hidden; }
+.garde .bande { background: var(--marine); color: #fff; padding: 12mm 18mm 10mm; display: flex; gap: 8mm; align-items: center;
+  border-bottom: 3pt solid var(--or); }
+.garde .bande img { max-height: 20mm; max-width: 42mm; background: #fff; padding: 2mm; border-radius: 2mm; }
+.garde .bet-nom { font-size: 15pt; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.garde .bet-coord { font-size: 8.5pt; opacity: .85; margin-top: 1mm; }
+.garde .corps { flex: 1; display: flex; flex-direction: column; padding: 16mm 18mm 0; }
+.garde .sur-titre { font-size: 9pt; font-weight: 600; color: var(--or); letter-spacing: .14em; text-transform: uppercase; }
+.garde .t1 { font-size: 30pt; font-weight: 700; color: var(--marine); line-height: 1.1; margin-top: 3mm; }
+.garde .objet { font-size: 13pt; color: var(--texte); margin-top: 4mm; }
+.garde .trait { width: 28mm; height: 3pt; background: var(--or); margin: 8mm 0 8mm; }
+.garde table.inter { width: 100%; }
+.garde .pied { margin-top: auto; padding-bottom: 8mm; }
+.garde .visas { display: flex; gap: 5mm; margin-top: 2mm; }
+.garde .visa { flex: 1; border: .5pt solid var(--filet); border-top: 2pt solid var(--marine); height: 28mm; padding: 2mm 3mm;
+  font-size: 8.5pt; font-weight: 600; color: var(--marine); position: relative; }
 .garde .visa img { position: absolute; right: 3mm; bottom: 2mm; max-height: 22mm; max-width: 38mm; }
-.garde .refs { font-size: 9pt; text-align: center; margin-top: 4mm; font-variant: small-caps; letter-spacing: .05em; }
+.garde .bande-bas { background: var(--fond); border-top: .5pt solid var(--filet); padding: 4mm 18mm; display: flex;
+  justify-content: space-between; font-size: 8.5pt; color: var(--gris); }
+.garde .bande-bas b { color: var(--marine); }
 
-/* sommaire, façon \tableofcontents */
+/* sommaire */
 .sommaire { list-style: none; padding: 0; margin: 8pt 0; }
-.sommaire > li { font-weight: bold; margin: 9pt 0 3pt; display: flex; }
+.sommaire > li { font-weight: 600; color: var(--marine); margin: 8pt 0 3pt; display: flex; flex-direction: column;
+  padding-bottom: 3pt; border-bottom: .5pt solid var(--filet); }
 .sommaire > li > a, .sommaire li a { color: inherit; text-decoration: none; }
-.sommaire .sn { display: inline-block; min-width: 2em; }
-.sommaire ol { list-style: none; padding-left: 2em; margin: 2pt 0 0; font-weight: normal; }
-.sommaire ol li { margin: 2pt 0; }
-.sommaire > li { flex-direction: column; }
+.sommaire .sn { display: inline-block; min-width: 2em; color: var(--or); }
+.sommaire ol { list-style: none; padding-left: 2em; margin: 2pt 0 0; font-weight: 400; color: var(--texte); }
+.sommaire ol li { margin: 1.5pt 0; }
 /* conclusion et signatures restent sur la même page */
 .conclusion { display: inline-block; width: 100%; }   /* bloc insécable : jamais coupé entre deux pages */
 /* bloc de signatures : un rang de tableau, que le navigateur ne coupe pas entre deux pages */
 table.signatures { margin-top: 12mm; border: none; table-layout: fixed; break-inside: avoid; }
-table.signatures td { width: 33.3%; height: 34mm; border-top: .5pt solid #000; padding: 3mm 4mm 0 0; font-size: 9.5pt; position: relative; }
-table.signatures td + td { padding-left: 4mm; }
+table.signatures tbody tr td { background: none; }
+table.signatures td { width: 33.3%; height: 34mm; border: .5pt solid var(--filet); border-top: 2pt solid var(--marine);
+  padding: 3mm 4mm 0; font-size: 9pt; font-weight: 600; color: var(--marine); position: relative; vertical-align: top; }
 table.signatures img { position: absolute; right: 2mm; bottom: 2mm; max-height: 24mm; max-width: 38mm; }
 """
 
@@ -401,22 +417,25 @@ def page_de_garde(inp: dict, bur: dict, date: str) -> str:
              ("Bureau d'études structure", bur.get("nom")), ("Bureau de contrôle", inp.get("controle")),
              ("Laboratoire (étude géotechnique)", inp.get("laboratoire")), ("Situation", inp.get("site"))]
     return f"""<section class="garde">
-  <div class="bet">{logo}<div><div class="bet-nom">{esc(bur.get('nom') or "Bureau d'études structure")}</div>
-    <div class="bet-coord">{esc(coord)}</div><div class="bet-coord">{esc(ident)}</div></div></div>
-  <div class="filet"></div>
-  <div class="titre"><div class="t1">Note de calcul</div><div class="t2">Structure en béton armé — gros œuvre</div></div>
-  <div class="objet">{esc(inp.get('objet') or inp.get('projet') or 'Projet')}</div>
-  <div class="filet bas"></div>
-  {kv([("Projet", esc(inp.get('projet') or '—'))] + [(k, esc(v) if v else '—') for k, v in inter]
-       + [("Phase", esc(inp.get('phase') or 'Exécution'))], "kv inter")}
-  <div class="pied">
-    {tableau(["Indice", "Date", "Objet de la révision", "Établi par", "Vérifié par"],
-             [[esc(inp.get('indice') or 'A'), date, "Première diffusion", esc(bur.get('ingenieur') or ''), ""]],
-             ["c", "c", "", "", ""])}
-    <div class="visas"><div class="visa">Bureau d'études — cachet et signature{cachet}</div>
-      <div class="visa">Bureau de contrôle — visa</div></div>
-    <div class="refs">BAEL 91 révisé 99 — RPS 2000 version 2011</div>
+  <header class="bande">{logo}<div><div class="bet-nom">{esc(bur.get('nom') or "Bureau d'études structure")}</div>
+    <div class="bet-coord">{esc(coord)}</div><div class="bet-coord">{esc(ident)}</div></div></header>
+  <div class="corps">
+    <div class="sur-titre">Structure en béton armé — phase {esc(inp.get('phase') or 'Exécution')}</div>
+    <div class="t1">Note de calcul</div>
+    <div class="objet">{esc(inp.get('objet') or inp.get('projet') or 'Projet')}</div>
+    <div class="trait"></div>
+    {kv([("Projet", esc(inp.get('projet') or '—'))] + [(k, esc(v) if v else '—') for k, v in inter]
+         + [("Phase", esc(inp.get('phase') or 'Exécution'))], "kv inter")}
+    <div class="pied">
+      {tableau(["Indice", "Date", "Objet de la révision", "Établi par", "Vérifié par"],
+               [[esc(inp.get('indice') or 'A'), date, "Première diffusion", esc(bur.get('ingenieur') or ''), ""]],
+               ["c", "c", "", "", ""])}
+      <div class="visas"><div class="visa">Bureau d'études — cachet et signature{cachet}</div>
+        <div class="visa">Bureau de contrôle — visa</div></div>
+    </div>
   </div>
+  <footer class="bande-bas"><span><b>Règlements :</b> BAEL 91 révisé 99 — RPS 2000 version 2011</span>
+    <span><b>Indice</b> {esc(inp.get('indice') or 'A')} — {date}</span></footer>
 </section>"""
 
 
