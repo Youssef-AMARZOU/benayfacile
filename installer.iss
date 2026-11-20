@@ -1,6 +1,6 @@
 ﻿; Installateur Windows de Bénayfacile (Inno Setup 6) — compilé par build_exe.bat
 #define AppName "Bénayfacile"
-#define AppVersion "0.3.0"
+#define AppVersion "0.4.0"
 #define AppExe "Benayfacile.exe"
 
 [Setup]
