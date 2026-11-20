@@ -21,6 +21,7 @@ const MODULES = [
   { id: 'sismique', label: 'Vérification sismique', groupe: 'Bâtiment', ref: 'RPS 2000 v2011' },
   { id: 'synthese', label: 'Synthèse de calcul', groupe: 'Livrables', ref: 'Note + plan DXF' },
   { id: 'bureau', label: 'Votre bureau', groupe: 'Réglages', ref: 'Page de garde et cartouche' },
+  { id: 'complements', label: 'Compléments', groupe: 'Réglages', ref: 'Logiciels sur ce poste' },
 ];
 
 /* Glyphes : la section de chaque élément, aciers en rouge (classe .acier / .acier-l). */
@@ -34,6 +35,7 @@ const GLYPHES = {
   sismique: '<path d="M2 19.5h22"/><path d="M8 19.5V6h10v13.5 M8 11h10 M8 15.5h10"/><path class="acier-l" d="M2 23.2c1.6-1.8 2.9 1.8 4.5 0s2.9 1.8 4.5 0 2.9 1.8 4.5 0 2.9 1.8 4.5 0 1.9 1.2 2 0"/>',
   synthese: '<path d="M6 2h10l5 5v17H6z"/><path d="M16 2v5h5"/><path class="acier-l" d="M9 12h9"/><path d="M9 15.5h9 M9 19h6"/>',
   bureau: '<rect x="2" y="6" width="22" height="14"/><path d="M2 12.5h22 M15 6v14 M15 16.2h9"/><path class="acier-l" d="M4.5 9.2h8"/>',
+  complements: '<rect x="3" y="3" width="8.5" height="8.5"/><rect x="14.5" y="3" width="8.5" height="8.5"/><rect x="3" y="14.5" width="8.5" height="8.5"/><path class="acier-l" d="M18.75 15v7.5 M15 18.75h7.5"/>',
 };
 const glyphe = (id, cls = 'glyphe') => `<svg class="${cls}" viewBox="0 0 26 26" aria-hidden="true">${GLYPHES[id] || ''}</svg>`;
 function vide(id, texte = 'Saisissez les données puis lancez le calcul.') {
@@ -276,6 +278,7 @@ function tabProjet() {
       <button class="btn ghost small" id="rb-demo">Essayer avec l'exemple R+4</button>
       <input type="file" id="rb-xlsx-fichier" accept=".xlsx,.xlsm" hidden></div>
     <p class="small modele-xlsx">Sans Robot : <a href="/api/robot/modele-excel" download="Modele_Benayfacile.xlsx">téléchargez le modèle Excel</a>, remplissez-le, puis importez-le.</p>
+    <p class="small">Logiciels utiles (Robot, tableur, lecteur DXF) : <a href="#" data-aller="complements">voir les compléments</a>.</p>
     <div class="chemin-rtd" id="rb-chemin-zone" hidden>
       ${field('rb-chemin', "Chemin du fichier Robot (.rtd)", '', 'text', 'any', 'C:\\Projets\\Residence.rtd')}
       <button class="btn small" id="rb-chemin-ok">Ouvrir dans Robot</button>
@@ -794,6 +797,45 @@ ${row2(field('b-patente', "Patente", b.patente || '', 'text'), field('b-if', "IF
   };
 }
 
+/* ============ MODULE: COMPLÉMENTS ============ */
+/* Logiciels externes : détectés sur ce poste (lecture seule), liens officiels pour obtenir ce qui manque. */
+function tabComplements() {
+  const carte = (c) => `<div class="card complement">
+  <div class="complement-tete"><h2>${esc(c.titre)}</h2>
+    <span class="pastille ${c.installe ? 'presente' : 'absente'}">${c.installe ? 'Installé' : 'Non installé'}</span></div>
+  <p>${esc(c.role)}</p>
+  <p class="small">${esc(c.requis)}</p>
+  ${c.installe ? `<p class="ok">Trouvé sur ce poste : ${esc(c.trouves.join(', '))}.</p>` : `<p class="note">${esc(c.conseil)}</p>`}
+  <div class="actions">${c.liens.filter(l => /^https:\/\//.test(l.url)).map((l, i) =>
+    `<a class="btn ${!c.installe && i === 0 ? 'gold' : 'ghost'} small" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.libelle)}</a>`).join('')}
+  ${c.id === 'tableur' ? '<a class="btn ghost small" href="/api/robot/modele-excel" download="Modele_Benayfacile.xlsx">Modèle Excel de Bénayfacile</a>' : ''}</div>
+</div>`;
+  async function charger() {
+    const el = $('co-liste'), etat = $('co-etat');
+    etat.innerHTML = '<span class="spinner"></span> recherche des logiciels sur ce poste…';
+    try {
+      const r = await api('/api/robot/complements');
+      const liste = r.complements || [];
+      el.innerHTML = liste.map(carte).join('');
+      const manquants = liste.filter(c => !c.installe).length;
+      etat.innerHTML = manquants
+        ? `<p class="note">${manquants} complément(s) absent(s). Bénayfacile reste utilisable : seules les fonctions qui en dépendent sont concernées.</p>`
+        : '<p class="ok">Tous les compléments sont présents sur ce poste.</p>';
+    } catch (e) { afficherErreur(etat, e, {}, 'Vérification impossible. '); }
+  }
+  return {
+    html: `<h1 class="module-title">Compléments <small>logiciels dont Bénayfacile se sert, détectés sur ce poste</small></h1>
+<p class="intro">Bénayfacile n'installe rien lui-même : les boutons ouvrent la page officielle de chaque éditeur dans votre navigateur. Après une installation, cliquez sur « Vérifier à nouveau ».</p>
+<div class="actions"><button class="btn ghost" id="co-verifier">Vérifier à nouveau</button></div>
+<div id="co-etat" aria-live="polite"></div>
+<div class="grid complements" id="co-liste"></div>`,
+    init() {
+      $('co-verifier').addEventListener('click', charger);
+      document.addEventListener('module', (e) => { if (e.detail === 'complements' && !$('co-liste').children.length) charger(); });
+    }
+  };
+}
+
 /* ---------- démo ---------- */
 async function loadDemo() {
   const resEl = $('sy-log'); resEl.innerHTML = '<span class="spinner"></span> chargement du scénario démo…';
@@ -819,7 +861,7 @@ async function loadDemo() {
 /* ---------- construction des onglets ---------- */
 const builders = { projet: tabProjet, poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
   semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile,
-  synthese: tabSynthese, bureau: tabBureau };
+  synthese: tabSynthese, bureau: tabBureau, complements: tabComplements };
 
 /* Les totaux montent de 0 à leur valeur quand les résultats arrivent (sauf « animations réduites »). */
 function compter(racine) {
@@ -902,7 +944,13 @@ async function boot() {
     });
     main.scrollTop = 0; window.scrollTo(0, 0);
     main.querySelectorAll('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + id));
+    document.dispatchEvent(new CustomEvent('module', { detail: id }));
   }
+  // liens internes « data-aller » : passer à un autre module
+  main.addEventListener('click', (e) => {
+    const lien = e.target.closest('[data-aller]'); if (!lien) return;
+    e.preventDefault(); activate(lien.dataset.aller);
+  });
   activate('projet');
   // Entrée dans un champ : lance l'action principale de l'onglet ; Alt+1…9 : changer de module
   main.addEventListener('keydown', (e) => {
