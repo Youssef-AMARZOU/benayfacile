@@ -58,7 +58,7 @@ def test_formules_mathml_bien_formees_et_numerotees(note_r4):
 def test_police_des_formules_embarquee(note_r4):
     html, _ = note_r4
     assert 'font-family: "Latin Modern Math"' in html          # formules : police mathématique embarquée
-    assert '"Segoe UI"' in html                                 # texte : police système sans empattement
+    assert 'Arial' in html                                     # texte : police système
     assert html.count("data:font/woff2;base64,") == 1
     assert (RACINE / "services" / "polices" / "GUST-FONT-LICENSE.txt").exists()
 

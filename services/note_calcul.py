@@ -44,7 +44,7 @@ def _police(nom: str) -> str:
 
 def polices_css() -> str:
     """Police des formules embarquée (Latin Modern Math, licence GUST, voir polices/GUST-FONT-LICENSE.txt) :
-    les formules gardent leur rendu partout, y compris en PDF. Le texte utilise la police système (Segoe UI)."""
+    les formules gardent leur rendu partout, y compris en PDF. Le texte utilise Arial, police système."""
     faces = []
     for famille, fichier, graisse, style in (
             ("Latin Modern Math", "latinmodern-math.woff2", "normal", "normal"),):
@@ -290,117 +290,98 @@ def calcul(lignes: List[Tuple[str, str, str]]) -> str:
 
 
 CSS = r"""
-:root { --marine: #17324d; --marine-2: #24507a; --or: #c49a3a; --texte: #1f2933; --gris: #5b6773;
-  --filet: #d3dae3; --fond: #f3f6f9; --ok: #1e6b34; --ok-fond: #e5f3e9; --ko: #b3261e; --ko-fond: #fbe9e7; }
-@page { size: A4; margin: 26mm 18mm 22mm 18mm;
-  @top-left { content: %(entete_g)s; font: 600 8.5pt "Segoe UI", Calibri, Arial, sans-serif; color: #17324d;
-    text-transform: uppercase; letter-spacing: .06em; vertical-align: bottom; padding-bottom: 3mm; border-bottom: 1.4pt solid #17324d; }
-  @top-right { content: %(entete_d)s; font: 8.5pt "Segoe UI", Calibri, Arial, sans-serif; color: #5b6773;
-    vertical-align: bottom; padding-bottom: 3mm; border-bottom: 1.4pt solid #17324d; }
-  @bottom-left { content: %(pied_g)s; font: 8pt "Segoe UI", Calibri, Arial, sans-serif; color: #5b6773;
-    vertical-align: top; padding-top: 3mm; border-top: .5pt solid #d3dae3; }
-  @bottom-center { content: "Document préparatoire — à valider par l'ingénieur signataire"; font: 8pt "Segoe UI", Calibri, Arial, sans-serif;
-    color: #5b6773; vertical-align: top; padding-top: 3mm; border-top: .5pt solid #d3dae3; }
-  @bottom-right { content: "Page " counter(page) " / " counter(pages); font: 600 8pt "Segoe UI", Calibri, Arial, sans-serif;
-    color: #17324d; vertical-align: top; padding-top: 3mm; border-top: .5pt solid #d3dae3; }
+@page { size: A4; margin: 25mm 18mm 22mm 20mm;
+  @top-left { content: %(entete_g)s; font: bold 8.5pt Arial, Helvetica, sans-serif; color: #000;
+    vertical-align: bottom; padding-bottom: 2mm; border-bottom: .75pt solid #000; }
+  @top-right { content: %(entete_d)s; font: 8.5pt Arial, Helvetica, sans-serif; color: #000;
+    vertical-align: bottom; padding-bottom: 2mm; border-bottom: .75pt solid #000; }
+  @bottom-left { content: %(pied_g)s; font: 8pt Arial, Helvetica, sans-serif; color: #333;
+    vertical-align: top; padding-top: 2mm; border-top: .5pt solid #000; }
+  @bottom-center { content: none; border-top: .5pt solid #000; }
+  @bottom-right { content: "Page " counter(page) " / " counter(pages); font: 8pt Arial, Helvetica, sans-serif; color: #333;
+    vertical-align: top; padding-top: 2mm; border-top: .5pt solid #000; }
 }
-@page :first { margin: 0;
+@page :first { margin: 12mm;
   @top-left { content: none; border: none; } @top-right { content: none; border: none; }
   @bottom-left { content: none; border: none; } @bottom-center { content: none; border: none; } @bottom-right { content: none; border: none; } }
 * { box-sizing: border-box; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { margin: 0; font: 9.75pt/1.45 "Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif; color: var(--texte);
-  font-variant-numeric: lining-nums; }
-.ecran { max-width: 174mm; margin: 0 auto; padding: 12mm 0; }
+body { margin: 0; font: 10pt/1.4 Arial, Helvetica, "Liberation Sans", sans-serif; color: #000; }
+.ecran { max-width: 172mm; margin: 0 auto; padding: 12mm 0; }
 @media print { .ecran { max-width: none; padding: 0; } }
 p { margin: 0 0 6pt; text-align: justify; hyphens: auto; }
-b { font-weight: 600; color: var(--marine); }
-math { font-family: "Latin Modern Math", "Cambria Math", serif; font-size: 1.08em; color: #111; }
-h2, h3, h4 { font-weight: 600; break-after: avoid; color: var(--marine); }
-h2 { font-size: 14pt; margin: 4pt 0 10pt; padding: 0 0 4pt; border-bottom: 2pt solid var(--marine);
-  text-transform: uppercase; letter-spacing: .03em; }
-h2 .num { display: inline-block; min-width: 1.5em; color: var(--or); }
-h3 { font-size: 11.5pt; margin: 16pt 0 6pt; padding-left: 7pt; border-left: 3pt solid var(--or); }
-h4 { font-size: 10pt; margin: 12pt 0 5pt; color: var(--marine-2); }
-ul { margin: 4pt 0 8pt; padding-left: 1.4em; } li { margin: 2pt 0; text-align: justify; }
-li::marker { color: var(--or); }
-/* tableaux : en-tête plein, lignes alternées, filets fins */
-table { width: 100%; border-collapse: collapse; margin: 4pt 0 12pt; font-size: 8.75pt; border: .5pt solid var(--filet); }
+math { font-family: "Latin Modern Math", "Cambria Math", serif; font-size: 1.08em; }
+h2, h3, h4 { font-weight: bold; break-after: avoid; }
+h2 { font-size: 13pt; margin: 2pt 0 10pt; padding: 3pt 6pt; color: #fff; background: #8a3324; }
+h2 .num { display: inline-block; min-width: 1.6em; }
+h3 { font-size: 11pt; margin: 14pt 0 6pt; color: #8a3324; border-bottom: .75pt solid #8a3324; padding-bottom: 1pt; }
+h4 { font-size: 10pt; margin: 12pt 0 4pt; text-decoration: underline; }
+ul { margin: 4pt 0 8pt; padding-left: 1.5em; } li { margin: 2pt 0; text-align: justify; }
+/* tableaux quadrillés, comme dans les notes des bureaux d'études */
+table { width: 100%; border-collapse: collapse; margin: 4pt 0 12pt; font-size: 9pt; }
 tr { break-inside: avoid; }
 thead { display: table-header-group; }
-th, td { padding: 3pt 5pt; vertical-align: middle; text-align: left; border: none; }
-thead th { font-weight: 600; background: var(--marine); color: #fff; vertical-align: bottom; }
-thead th math { color: #fff; }
-tbody tr:nth-child(even) td { background: var(--fond); }
-tbody tr + tr td, tbody tr + tr th { border-top: .5pt solid var(--filet); }
-td.n, th.n { text-align: right; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
-thead th, thead th.n { white-space: normal; }
-th .u { font-weight: 400; font-size: 7.5pt; opacity: .85; }
-caption { caption-side: top; text-align: left; font-size: 8.5pt; font-weight: 600; color: var(--marine);
-  text-transform: uppercase; letter-spacing: .04em; padding: 0 0 4pt; }
+th, td { padding: 2.5pt 4pt; vertical-align: middle; text-align: left; border: .5pt solid #000; }
+thead th { font-weight: bold; background: #e9e2d3; text-align: center; vertical-align: middle; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+thead th, thead th.n { white-space: normal; text-align: center; }
+th .u { font-weight: normal; font-size: 8pt; }
+caption { caption-side: top; text-align: center; font-size: 9pt; font-weight: bold; padding: 0 0 3pt; }
 .bloc { break-inside: avoid; }   /* tableau court : jamais coupé entre deux pages */
 p:has(+ .bloc), p:has(+ .equation), .equation:has(+ .bloc), h3:has(+ .bloc), h3:has(+ p + .bloc),
 h2 + p { break-after: avoid; }   /* le texte qui l'annonce reste avec lui */
 table.hyp td:nth-child(2) { text-align: center; }
 td.c, th.c { text-align: center; }
 .nw { white-space: nowrap; }
-table.kv th { width: 45%; font-weight: 600; color: var(--marine); background: var(--fond); }
-table.kv tbody tr:nth-child(even) td { background: none; }
-table.calcul { border-left: 3pt solid var(--marine); }
-table.calcul td { padding: 4pt 6pt; }
-table.calcul tbody tr:nth-child(even) td { background: none; }
-table.calcul td.des { width: 24%; font-weight: 600; color: var(--marine); background: var(--fond) !important; }
-table.calcul td.res { width: 20%; text-align: right; white-space: nowrap; font-weight: 600; }
+table.kv th { width: 45%; font-weight: bold; background: #f4f0e6; }
+table.calcul td { padding: 3pt 5pt; }
+table.calcul td.des { width: 24%; font-weight: bold; background: #f4f0e6; }
+table.calcul td.res { width: 20%; text-align: right; white-space: nowrap; font-weight: bold; }
 table.calcul math { math-style: normal; }   /* fractions en taille d'affichage */
 table.fixe { table-layout: fixed; }
 table.fixe td.el { overflow-wrap: anywhere; }
-.equation { display: flex; align-items: center; margin: 8pt 0 10pt; padding: 6pt 10pt; break-inside: avoid;
-  background: var(--fond); border-left: 3pt solid var(--or); }
+.equation { display: flex; align-items: center; margin: 8pt 0 10pt; break-inside: avoid; }
 .equation math { flex: 1; }
-.equation .no { width: 3em; text-align: right; color: var(--gris); }
-.ok, .ko { display: inline-block; white-space: nowrap; font-weight: 600; font-size: .92em; padding: .5pt 6pt; border-radius: 8pt; }
-.ok { color: var(--ok); background: var(--ok-fond); } .ko { color: var(--ko); background: var(--ko-fond); }
-.note { font-size: 8.5pt; color: var(--gris); }
-.reserve { background: var(--ko-fond); border-left: 3pt solid var(--ko); padding: 6pt 10pt; margin: 8pt 0; }
+.equation .no { width: 3em; text-align: right; }
+.ok, .ko { white-space: nowrap; font-weight: bold; }
+.ok { color: #1f5c32; } .ko { color: #b01e1e; }
+.note { font-size: 8.5pt; }
+.reserve { border: .75pt solid #b01e1e; padding: 5pt 8pt; margin: 8pt 0; }
 .saut { break-before: page; }
 
-/* page de garde */
-.garde { height: 296mm; display: flex; flex-direction: column; overflow: hidden; }
-.garde .bande { background: var(--marine); color: #fff; padding: 12mm 18mm 10mm; display: flex; gap: 8mm; align-items: center;
-  border-bottom: 3pt solid var(--or); }
-.garde .bande img { max-height: 20mm; max-width: 42mm; background: #fff; padding: 2mm; border-radius: 2mm; }
-.garde .bet-nom { font-size: 15pt; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
-.garde .bet-coord { font-size: 8.5pt; opacity: .85; margin-top: 1mm; }
-.garde .corps { flex: 1; display: flex; flex-direction: column; padding: 16mm 18mm 0; }
-.garde .sur-titre { font-size: 9pt; font-weight: 600; color: var(--or); letter-spacing: .14em; text-transform: uppercase; }
-.garde .t1 { font-size: 30pt; font-weight: 700; color: var(--marine); line-height: 1.1; margin-top: 3mm; }
-.garde .objet { font-size: 13pt; color: var(--texte); margin-top: 4mm; }
-.garde .trait { width: 28mm; height: 3pt; background: var(--or); margin: 8mm 0 8mm; }
-.garde table.inter { width: 100%; }
-.garde .pied { margin-top: auto; padding-bottom: 8mm; }
-.garde .visas { display: flex; gap: 5mm; margin-top: 2mm; }
-.garde .visa { flex: 1; border: .5pt solid var(--filet); border-top: 2pt solid var(--marine); height: 28mm; padding: 2mm 3mm;
-  font-size: 8.5pt; font-weight: 600; color: var(--marine); position: relative; }
+/* page de garde : cadre double, frise de zellige, cartouche quadrillé */
+.garde { height: 272mm; border: 2.25pt double #000; display: flex; flex-direction: column; overflow: hidden; }
+.garde .frise { height: 10mm; background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><rect width='40' height='40' fill='%238a3324'/><g fill='%231f4d3a'><path d='M0 0H8L0 8Z'/><path d='M40 0H32L40 8Z'/><path d='M0 40H8L0 32Z'/><path d='M40 40H32L40 32Z'/></g><g fill='%23efe3c4'><rect x='9' y='9' width='22' height='22'/><rect x='9' y='9' width='22' height='22' transform='rotate(45 20 20)'/></g><g fill='%238a3324'><rect x='14' y='14' width='12' height='12'/><rect x='14' y='14' width='12' height='12' transform='rotate(45 20 20)'/></g><g fill='%231f4d3a'><rect x='17' y='17' width='6' height='6' transform='rotate(45 20 20)'/></g></svg>") repeat-x; background-size: 10mm 10mm; border-bottom: .75pt solid #000; }
+.garde .bet { display: flex; gap: 6mm; align-items: center; padding: 6mm 8mm; border-bottom: .75pt solid #000; }
+.garde .bet img { max-height: 22mm; max-width: 45mm; }
+.garde .bet-nom { font-size: 14pt; font-weight: bold; color: #8a3324; text-transform: uppercase; }
+.garde .bet-coord { font-size: 8.5pt; margin-top: 1mm; }
+.garde .corps { flex: 1; display: flex; flex-direction: column; padding: 0 8mm; text-align: center; }
+.garde .t1 { margin: 22mm auto 0; padding: 5mm 14mm; border: 1.5pt solid #000; font-size: 24pt; font-weight: bold;
+  text-transform: uppercase; letter-spacing: .04em; }
+.garde .sur-titre { font-size: 11pt; font-weight: bold; margin-top: 6mm; }
+.garde .objet { font-size: 13pt; font-weight: bold; color: #8a3324; margin: 8mm 6mm 10mm; }
+.garde table.inter { width: 100%; text-align: left; }
+.garde .pied { margin-top: auto; padding-bottom: 6mm; text-align: left; }
+.garde .visas { display: flex; margin-top: -1pt; }
+.garde .visa { flex: 1; border: .5pt solid #000; height: 28mm; padding: 2mm 3mm; font-size: 8.5pt; font-weight: bold; position: relative; }
+.garde .visa + .visa { border-left: none; }
 .garde .visa img { position: absolute; right: 3mm; bottom: 2mm; max-height: 22mm; max-width: 38mm; }
-.garde .bande-bas { background: var(--fond); border-top: .5pt solid var(--filet); padding: 4mm 18mm; display: flex;
-  justify-content: space-between; font-size: 8.5pt; color: var(--gris); }
-.garde .bande-bas b { color: var(--marine); }
+.garde .bande-bas { border-top: .75pt solid #000; padding: 3mm 8mm; display: flex; justify-content: space-between; font-size: 8.5pt; }
+.garde .frise.bas { border-bottom: none; border-top: .75pt solid #000; }
 
 /* sommaire */
 .sommaire { list-style: none; padding: 0; margin: 8pt 0; }
-.sommaire > li { font-weight: 600; color: var(--marine); margin: 8pt 0 3pt; display: flex; flex-direction: column;
-  padding-bottom: 3pt; border-bottom: .5pt solid var(--filet); }
+.sommaire > li { font-weight: bold; margin: 8pt 0 2pt; display: flex; flex-direction: column; }
 .sommaire > li > a, .sommaire li a { color: inherit; text-decoration: none; }
-.sommaire .sn { display: inline-block; min-width: 2em; color: var(--or); }
-.sommaire ol { list-style: none; padding-left: 2em; margin: 2pt 0 0; font-weight: 400; color: var(--texte); }
+.sommaire .sn { display: inline-block; min-width: 2em; }
+.sommaire ol { list-style: none; padding-left: 2em; margin: 2pt 0 0; font-weight: normal; }
 .sommaire ol li { margin: 1.5pt 0; }
 /* conclusion et signatures restent sur la même page */
 .conclusion { display: inline-block; width: 100%; }   /* bloc insécable : jamais coupé entre deux pages */
 /* bloc de signatures : un rang de tableau, que le navigateur ne coupe pas entre deux pages */
-table.signatures { margin-top: 12mm; border: none; table-layout: fixed; break-inside: avoid; }
-table.signatures tbody tr td { background: none; }
-table.signatures td { width: 33.3%; height: 34mm; border: .5pt solid var(--filet); border-top: 2pt solid var(--marine);
-  padding: 3mm 4mm 0; font-size: 9pt; font-weight: 600; color: var(--marine); position: relative; vertical-align: top; }
+table.signatures { margin-top: 12mm; table-layout: fixed; break-inside: avoid; }
+table.signatures td { width: 33.3%; height: 34mm; padding: 2mm 3mm 0; font-size: 9pt; font-weight: bold; position: relative; vertical-align: top; }
 table.signatures img { position: absolute; right: 2mm; bottom: 2mm; max-height: 24mm; max-width: 38mm; }
 """
 
@@ -417,13 +398,13 @@ def page_de_garde(inp: dict, bur: dict, date: str) -> str:
              ("Bureau d'études structure", bur.get("nom")), ("Bureau de contrôle", inp.get("controle")),
              ("Laboratoire (étude géotechnique)", inp.get("laboratoire")), ("Situation", inp.get("site"))]
     return f"""<section class="garde">
-  <header class="bande">{logo}<div><div class="bet-nom">{esc(bur.get('nom') or "Bureau d'études structure")}</div>
-    <div class="bet-coord">{esc(coord)}</div><div class="bet-coord">{esc(ident)}</div></div></header>
+  <div class="frise"></div>
+  <div class="bet">{logo}<div><div class="bet-nom">{esc(bur.get('nom') or "Bureau d'études structure")}</div>
+    <div class="bet-coord">{esc(coord)}</div><div class="bet-coord">{esc(ident)}</div></div></div>
   <div class="corps">
-    <div class="sur-titre">Structure en béton armé — phase {esc(inp.get('phase') or 'Exécution')}</div>
     <div class="t1">Note de calcul</div>
+    <div class="sur-titre">Structure en béton armé — Phase : {esc(inp.get('phase') or 'Exécution')}</div>
     <div class="objet">{esc(inp.get('objet') or inp.get('projet') or 'Projet')}</div>
-    <div class="trait"></div>
     {kv([("Projet", esc(inp.get('projet') or '—'))] + [(k, esc(v) if v else '—') for k, v in inter]
          + [("Phase", esc(inp.get('phase') or 'Exécution'))], "kv inter")}
     <div class="pied">
@@ -434,8 +415,9 @@ def page_de_garde(inp: dict, bur: dict, date: str) -> str:
         <div class="visa">Bureau de contrôle — visa</div></div>
     </div>
   </div>
-  <footer class="bande-bas"><span><b>Règlements :</b> BAEL 91 révisé 99 — RPS 2000 version 2011</span>
-    <span><b>Indice</b> {esc(inp.get('indice') or 'A')} — {date}</span></footer>
+  <div class="bande-bas"><span>Règlements : BAEL 91 révisé 99 — RPS 2000 version 2011</span>
+    <span>Indice {esc(inp.get('indice') or 'A')} du {date}</span></div>
+  <div class="frise bas"></div>
 </section>"""
 
 
