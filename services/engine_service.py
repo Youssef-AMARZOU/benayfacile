@@ -917,6 +917,28 @@ def lot(inp: LotInput):
     return {**sorties, "resume": resume, "materiaux": m.model_dump()}
 
 
+# --------------------------------------------------------------------------- #
+# Dalles pleines et balcons (BAEL A.8.2, Annexe E3) — voir dalles.py          #
+# --------------------------------------------------------------------------- #
+import dalles  # noqa: E402  (importé après les fonctions BAEL dont il se sert)
+
+
+@app.post("/dalle")
+def dalle(inp: dalles.DalleInput):
+    try:
+        return dalles.dalle(inp)
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err))
+
+
+@app.post("/balcon")
+def balcon(inp: dalles.BalconInput):
+    try:
+        return dalles.balcon(inp)
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err))
+
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8002)

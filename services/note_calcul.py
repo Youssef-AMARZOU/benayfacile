@@ -43,14 +43,11 @@ def _police(nom: str) -> str:
 
 
 def polices_css() -> str:
-    """Latin Modern embarquée (licence GUST, voir polices/GUST-FONT-LICENSE.txt) : la note
-    garde son rendu LaTeX partout, y compris enregistrée ou imprimée en PDF."""
+    """Police des formules embarquée (Latin Modern Math, licence GUST, voir polices/GUST-FONT-LICENSE.txt) :
+    les formules gardent leur rendu partout, y compris en PDF. Le texte utilise Arial, police système."""
     faces = []
     for famille, fichier, graisse, style in (
-            ("Latin Modern Roman", "lmroman10-regular.woff2", "normal", "normal"),
-            ("Latin Modern Roman", "lmroman10-bold.woff2", "bold", "normal"),
-            ("Latin Modern Roman", "lmroman10-italic.woff2", "normal", "italic"),
-            ("Latin Modern Math", "latinmodern-math.woff2", "normal", "normal")):
+            ("Latin Modern Math", "latinmodern-math.woff2", "normal", "normal"),):
         b64 = _police(fichier)
         if b64:
             faces.append(f'@font-face {{ font-family: "{famille}"; font-weight: {graisse}; font-style: {style}; '
@@ -221,7 +218,7 @@ def _insecable(html_tableau: str, nb_lignes: int) -> str:
     return f'<div class="bloc">{html_tableau}</div>' if nb_lignes <= LIGNES_INSECABLES else html_tableau
 
 
-_INSECABLE = re.compile(r"\d+ HA\d+|\d+(?:,\d+)? × \d+(?:,\d+)?|\S+ à \S+")
+_INSECABLE = re.compile(r"\d+ HA\d+|HA\d+ e=\d+|\d+(?:,\d+)? × \d+(?:,\d+)?|\S+ à \S+")
 
 
 def _cellule(v) -> str:
@@ -293,98 +290,98 @@ def calcul(lignes: List[Tuple[str, str, str]]) -> str:
 
 
 CSS = r"""
-@page { size: A4; margin: 24mm 20mm 22mm 20mm;
-  @top-left { content: %(entete_g)s; font: italic 9pt "Latin Modern Roman", serif; vertical-align: bottom; padding-bottom: 2.5mm; border-bottom: .4pt solid #000; }
-  @top-right { content: %(entete_d)s; font: italic 9pt "Latin Modern Roman", serif; vertical-align: bottom; padding-bottom: 2.5mm; border-bottom: .4pt solid #000; }
-  @bottom-left { content: %(pied_g)s; font: 9pt "Latin Modern Roman", serif; vertical-align: top; padding-top: 3mm; }
-  @bottom-right { content: counter(page) " / " counter(pages); font: 9pt "Latin Modern Roman", serif; vertical-align: top; padding-top: 3mm; }
+@page { size: A4; margin: 25mm 18mm 22mm 20mm;
+  @top-left { content: %(entete_g)s; font: bold 8.5pt Arial, Helvetica, sans-serif; color: #000;
+    vertical-align: bottom; padding-bottom: 2mm; border-bottom: .75pt solid #000; }
+  @top-right { content: %(entete_d)s; font: 8.5pt Arial, Helvetica, sans-serif; color: #000;
+    vertical-align: bottom; padding-bottom: 2mm; border-bottom: .75pt solid #000; }
+  @bottom-left { content: %(pied_g)s; font: 8pt Arial, Helvetica, sans-serif; color: #333;
+    vertical-align: top; padding-top: 2mm; border-top: .5pt solid #000; }
+  @bottom-center { content: none; border-top: .5pt solid #000; }
+  @bottom-right { content: "Page " counter(page) " / " counter(pages); font: 8pt Arial, Helvetica, sans-serif; color: #333;
+    vertical-align: top; padding-top: 2mm; border-top: .5pt solid #000; }
 }
-@page :first { margin: 16mm;
+@page :first { margin: 12mm;
   @top-left { content: none; border: none; } @top-right { content: none; border: none; }
-  @bottom-left { content: none; } @bottom-right { content: none; } }
+  @bottom-left { content: none; border: none; } @bottom-center { content: none; border: none; } @bottom-right { content: none; border: none; } }
 * { box-sizing: border-box; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { margin: 0; font: 10.5pt/1.38 "Latin Modern Roman", "Latin Modern Math", "CMU Serif", "Cambria", "Times New Roman", serif;
-  color: #000; font-kerning: normal; font-variant-ligatures: common-ligatures; }
-.ecran { max-width: 170mm; margin: 0 auto; padding: 12mm 0; }
+body { margin: 0; font: 10pt/1.4 Arial, Helvetica, "Liberation Sans", sans-serif; color: #000; }
+.ecran { max-width: 172mm; margin: 0 auto; padding: 12mm 0; }
 @media print { .ecran { max-width: none; padding: 0; } }
 p { margin: 0 0 6pt; text-align: justify; hyphens: auto; }
-p + p { text-indent: 1.5em; }
-math { font-family: "Latin Modern Math", "Cambria Math", serif; font-size: 1.05em; }
-h2, h3, h4 { font-family: inherit; font-weight: bold; break-after: avoid; }
-h2 { font-size: 14.4pt; margin: 20pt 0 8pt; }
+math { font-family: "Latin Modern Math", "Cambria Math", serif; font-size: 1.08em; }
+h2, h3, h4 { font-weight: bold; break-after: avoid; }
+h2 { font-size: 13pt; margin: 2pt 0 10pt; padding: 3pt 6pt; color: #fff; background: #8a3324; }
 h2 .num { display: inline-block; min-width: 1.6em; }
-h3 { font-size: 12pt; margin: 14pt 0 6pt; }
-h4 { font-size: 10.5pt; margin: 12pt 0 4pt; }
-ul { margin: 4pt 0 8pt; padding-left: 1.6em; } li { margin: 2pt 0; text-align: justify; }
-/* tableaux à la manière de booktabs : filets horizontaux seulement */
-table { width: 100%; border-collapse: collapse; margin: 6pt 0 12pt; font-size: 9.5pt; border-top: 1pt solid #000; border-bottom: 1pt solid #000; }
+h3 { font-size: 11pt; margin: 14pt 0 6pt; color: #8a3324; border-bottom: .75pt solid #8a3324; padding-bottom: 1pt; }
+h4 { font-size: 10pt; margin: 12pt 0 4pt; text-decoration: underline; }
+ul { margin: 4pt 0 8pt; padding-left: 1.5em; } li { margin: 2pt 0; text-align: justify; }
+/* tableaux quadrillés, comme dans les notes des bureaux d'études */
+table { width: 100%; border-collapse: collapse; margin: 4pt 0 12pt; font-size: 9pt; }
 tr { break-inside: avoid; }
 thead { display: table-header-group; }
-th, td { padding: 2.5pt 6pt; vertical-align: top; text-align: left; border: none; }
-thead th { font-weight: bold; border-bottom: .5pt solid #000; }
-td.n, th.n { text-align: right; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
-thead th, thead th.n { white-space: normal; vertical-align: bottom; }
-th .u { font-weight: normal; font-size: 8.5pt; }
-caption { caption-side: top; text-align: center; font-size: 9.5pt; padding: 0 0 5pt; }
+th, td { padding: 2.5pt 4pt; vertical-align: middle; text-align: left; border: .5pt solid #000; }
+thead th { font-weight: bold; background: #e9e2d3; text-align: center; vertical-align: middle; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+thead th, thead th.n { white-space: normal; text-align: center; }
+th .u { font-weight: normal; font-size: 8pt; }
+caption { caption-side: top; text-align: center; font-size: 9pt; font-weight: bold; padding: 0 0 3pt; }
 .bloc { break-inside: avoid; }   /* tableau court : jamais coupé entre deux pages */
 p:has(+ .bloc), p:has(+ .equation), .equation:has(+ .bloc), h3:has(+ .bloc), h3:has(+ p + .bloc),
 h2 + p { break-after: avoid; }   /* le texte qui l'annonce reste avec lui */
-thead { display: table-header-group; }   /* en-tête répété si le tableau continue page suivante */
 table.hyp td:nth-child(2) { text-align: center; }
 td.c, th.c { text-align: center; }
 .nw { white-space: nowrap; }
-table.kv th { width: 52%; font-weight: normal; }
-table.kv tr + tr th, table.kv tr + tr td { border-top: .25pt solid #c8c8c8; }
-table.calcul td { padding: 3pt 6pt; }
-table.calcul tr + tr td { border-top: .25pt solid #c8c8c8; }
-table.calcul td.des { width: 27%; font-style: italic; }
-table.calcul td.res { width: 22%; text-align: right; white-space: nowrap; }
-table.calcul math { math-style: normal; }   /* fractions en taille d'affichage, comme \displaystyle */
+table.kv th { width: 45%; font-weight: bold; background: #f4f0e6; }
+table.calcul td { padding: 3pt 5pt; }
+table.calcul td.des { width: 24%; font-weight: bold; background: #f4f0e6; }
+table.calcul td.res { width: 20%; text-align: right; white-space: nowrap; font-weight: bold; }
+table.calcul math { math-style: normal; }   /* fractions en taille d'affichage */
 table.fixe { table-layout: fixed; }
 table.fixe td.el { overflow-wrap: anywhere; }
-.ok, .ko { white-space: nowrap; }
 .equation { display: flex; align-items: center; margin: 8pt 0 10pt; break-inside: avoid; }
 .equation math { flex: 1; }
 .equation .no { width: 3em; text-align: right; }
-.ok { font-weight: bold; color: #1b5e20; } .ko { font-weight: bold; color: #b71c1c; }
-.note { font-size: 9pt; }
-.reserve { border-left: 2pt solid #b71c1c; padding: 4pt 0 4pt 10pt; margin: 8pt 0; }
+.ok, .ko { white-space: nowrap; font-weight: bold; }
+.ok { color: #1f5c32; } .ko { color: #b01e1e; }
+.note { font-size: 8.5pt; }
+.reserve { border: .75pt solid #b01e1e; padding: 5pt 8pt; margin: 8pt 0; }
 .saut { break-before: page; }
 
-/* page de garde, dans l'esprit d'un \begin{titlepage} */
-.garde { height: 264mm; display: flex; flex-direction: column; text-align: center; }
-.garde .bet { display: flex; gap: 8mm; align-items: center; justify-content: center; }
-.garde .bet img { max-height: 20mm; max-width: 40mm; }
-.garde .bet-nom { font-size: 14pt; font-weight: bold; font-variant: small-caps; letter-spacing: .04em; }
-.garde .bet-coord { font-size: 9pt; }
-.garde .filet { border-top: 1.2pt solid #000; border-bottom: .4pt solid #000; height: 3pt; margin: 12mm 0 10mm; }
-.garde .titre .t1 { font-size: 24.88pt; font-weight: bold; letter-spacing: .02em; }
-.garde .titre .t2 { font-size: 12pt; font-variant: small-caps; letter-spacing: .08em; margin-top: 3mm; }
-.garde .objet { font-size: 14pt; font-style: italic; margin: 10mm 10mm 0; }
-.garde .filet.bas { margin: 10mm 0 8mm; }
-.garde table.inter { width: 78%; margin: 0 auto; text-align: left; }
-.garde table.inter th { width: 45%; }
-.garde .pied { margin-top: auto; text-align: left; }
-.garde .visas { display: flex; gap: 6mm; margin-top: 4mm; }
-.garde .visa { flex: 1; border: .5pt solid #000; height: 28mm; padding: 2mm 3mm; font-size: 9pt; font-style: italic; position: relative; }
+/* page de garde : cadre double, frise de zellige, cartouche quadrillé */
+.garde { height: 272mm; border: 2.25pt double #000; display: flex; flex-direction: column; overflow: hidden; }
+.garde .frise { height: 10mm; background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><rect width='40' height='40' fill='%238a3324'/><g fill='%231f4d3a'><path d='M0 0H8L0 8Z'/><path d='M40 0H32L40 8Z'/><path d='M0 40H8L0 32Z'/><path d='M40 40H32L40 32Z'/></g><g fill='%23efe3c4'><rect x='9' y='9' width='22' height='22'/><rect x='9' y='9' width='22' height='22' transform='rotate(45 20 20)'/></g><g fill='%238a3324'><rect x='14' y='14' width='12' height='12'/><rect x='14' y='14' width='12' height='12' transform='rotate(45 20 20)'/></g><g fill='%231f4d3a'><rect x='17' y='17' width='6' height='6' transform='rotate(45 20 20)'/></g></svg>") repeat-x; background-size: 10mm 10mm; border-bottom: .75pt solid #000; }
+.garde .bet { display: flex; gap: 6mm; align-items: center; padding: 6mm 8mm; border-bottom: .75pt solid #000; }
+.garde .bet img { max-height: 22mm; max-width: 45mm; }
+.garde .bet-nom { font-size: 14pt; font-weight: bold; color: #8a3324; text-transform: uppercase; }
+.garde .bet-coord { font-size: 8.5pt; margin-top: 1mm; }
+.garde .corps { flex: 1; display: flex; flex-direction: column; padding: 0 8mm; text-align: center; }
+.garde .t1 { margin: 22mm auto 0; padding: 5mm 14mm; border: 1.5pt solid #000; font-size: 24pt; font-weight: bold;
+  text-transform: uppercase; letter-spacing: .04em; }
+.garde .sur-titre { font-size: 11pt; font-weight: bold; margin-top: 6mm; }
+.garde .objet { font-size: 13pt; font-weight: bold; color: #8a3324; margin: 8mm 6mm 10mm; }
+.garde table.inter { width: 100%; text-align: left; }
+.garde .pied { margin-top: auto; padding-bottom: 6mm; text-align: left; }
+.garde .visas { display: flex; margin-top: -1pt; }
+.garde .visa { flex: 1; border: .5pt solid #000; height: 28mm; padding: 2mm 3mm; font-size: 8.5pt; font-weight: bold; position: relative; }
+.garde .visa + .visa { border-left: none; }
 .garde .visa img { position: absolute; right: 3mm; bottom: 2mm; max-height: 22mm; max-width: 38mm; }
-.garde .refs { font-size: 9pt; text-align: center; margin-top: 4mm; font-variant: small-caps; letter-spacing: .05em; }
+.garde .bande-bas { border-top: .75pt solid #000; padding: 3mm 8mm; display: flex; justify-content: space-between; font-size: 8.5pt; }
+.garde .frise.bas { border-bottom: none; border-top: .75pt solid #000; }
 
-/* sommaire, façon \tableofcontents */
+/* sommaire */
 .sommaire { list-style: none; padding: 0; margin: 8pt 0; }
-.sommaire > li { font-weight: bold; margin: 9pt 0 3pt; display: flex; }
+.sommaire > li { font-weight: bold; margin: 8pt 0 2pt; display: flex; flex-direction: column; }
 .sommaire > li > a, .sommaire li a { color: inherit; text-decoration: none; }
 .sommaire .sn { display: inline-block; min-width: 2em; }
 .sommaire ol { list-style: none; padding-left: 2em; margin: 2pt 0 0; font-weight: normal; }
-.sommaire ol li { margin: 2pt 0; }
-.sommaire > li { flex-direction: column; }
+.sommaire ol li { margin: 1.5pt 0; }
 /* conclusion et signatures restent sur la même page */
 .conclusion { display: inline-block; width: 100%; }   /* bloc insécable : jamais coupé entre deux pages */
 /* bloc de signatures : un rang de tableau, que le navigateur ne coupe pas entre deux pages */
-table.signatures { margin-top: 12mm; border: none; table-layout: fixed; break-inside: avoid; }
-table.signatures td { width: 33.3%; height: 34mm; border-top: .5pt solid #000; padding: 3mm 4mm 0 0; font-size: 9.5pt; position: relative; }
-table.signatures td + td { padding-left: 4mm; }
+table.signatures { margin-top: 12mm; table-layout: fixed; break-inside: avoid; }
+table.signatures td { width: 33.3%; height: 34mm; padding: 2mm 3mm 0; font-size: 9pt; font-weight: bold; position: relative; vertical-align: top; }
 table.signatures img { position: absolute; right: 2mm; bottom: 2mm; max-height: 24mm; max-width: 38mm; }
 """
 
@@ -401,22 +398,26 @@ def page_de_garde(inp: dict, bur: dict, date: str) -> str:
              ("Bureau d'études structure", bur.get("nom")), ("Bureau de contrôle", inp.get("controle")),
              ("Laboratoire (étude géotechnique)", inp.get("laboratoire")), ("Situation", inp.get("site"))]
     return f"""<section class="garde">
+  <div class="frise"></div>
   <div class="bet">{logo}<div><div class="bet-nom">{esc(bur.get('nom') or "Bureau d'études structure")}</div>
     <div class="bet-coord">{esc(coord)}</div><div class="bet-coord">{esc(ident)}</div></div></div>
-  <div class="filet"></div>
-  <div class="titre"><div class="t1">Note de calcul</div><div class="t2">Structure en béton armé — gros œuvre</div></div>
-  <div class="objet">{esc(inp.get('objet') or inp.get('projet') or 'Projet')}</div>
-  <div class="filet bas"></div>
-  {kv([("Projet", esc(inp.get('projet') or '—'))] + [(k, esc(v) if v else '—') for k, v in inter]
-       + [("Phase", esc(inp.get('phase') or 'Exécution'))], "kv inter")}
-  <div class="pied">
-    {tableau(["Indice", "Date", "Objet de la révision", "Établi par", "Vérifié par"],
-             [[esc(inp.get('indice') or 'A'), date, "Première diffusion", esc(bur.get('ingenieur') or ''), ""]],
-             ["c", "c", "", "", ""])}
-    <div class="visas"><div class="visa">Bureau d'études — cachet et signature{cachet}</div>
-      <div class="visa">Bureau de contrôle — visa</div></div>
-    <div class="refs">BAEL 91 révisé 99 — RPS 2000 version 2011</div>
+  <div class="corps">
+    <div class="t1">Note de calcul</div>
+    <div class="sur-titre">Structure en béton armé — Phase : {esc(inp.get('phase') or 'Exécution')}</div>
+    <div class="objet">{esc(inp.get('objet') or inp.get('projet') or 'Projet')}</div>
+    {kv([("Projet", esc(inp.get('projet') or '—'))] + [(k, esc(v) if v else '—') for k, v in inter]
+         + [("Phase", esc(inp.get('phase') or 'Exécution'))], "kv inter")}
+    <div class="pied">
+      {tableau(["Indice", "Date", "Objet de la révision", "Établi par", "Vérifié par"],
+               [[esc(inp.get('indice') or 'A'), date, "Première diffusion", esc(bur.get('ingenieur') or ''), ""]],
+               ["c", "c", "", "", ""])}
+      <div class="visas"><div class="visa">Bureau d'études — cachet et signature{cachet}</div>
+        <div class="visa">Bureau de contrôle — visa</div></div>
+    </div>
   </div>
+  <div class="bande-bas"><span>Règlements : BAEL 91 révisé 99 — RPS 2000 version 2011</span>
+    <span>Indice {esc(inp.get('indice') or 'A')} du {date}</span></div>
+  <div class="frise bas"></div>
 </section>"""
 
 
@@ -424,7 +425,7 @@ SOMMAIRE = [
     ("s1", "Présentation de l'ouvrage", []), ("s2", "Règlements et documents de référence", []),
     ("s3", "Hypothèses de calcul", ["Béton", "Acier", "Enrobages et fissuration", "Sol de fondation", "Charges", "Combinaisons d'actions"]),
     ("s4", "Modélisation", []), ("s5", "Étude sismique (RPS 2000 version 2011)", []),
-    ("s6", "Dimensionnement des éléments", ["Poteaux", "Poutres", "Semelles", "Voiles"]),
+    ("s6", "Dimensionnement des éléments", ["Poteaux", "Poutres", "Semelles", "Voiles", "Dalles et balcons"]),
     ("s7", "Quantités de béton et d'acier", []), ("s8", "Conclusion, réserves et visas", []),
 ]
 
@@ -780,6 +781,102 @@ def section_voiles(liste: List[dict], m: dict) -> str:
     return "".join(out)
 
 
+def _fleche(e: dict) -> Tuple[str, str, str]:
+    """Ligne d'exemple : conditions de dispense du calcul de flèche (valeur / limite)."""
+    f = e.get("fleche") or {}
+    cond = " ; ".join(f"{c['nom']} : {fr(c['valeur'], 4)} / {fr(c['limite'], 4)}" for c in f.get("conditions") or [])
+    return (f"Flèche ({esc(f.get('article') or '—')})", esc(cond or "—"),
+            "Dispensée" if f.get("dispense") else "<b>À calculer</b>")
+
+
+def _choix(r: Optional[dict]) -> str:
+    f = (r or {}).get("ferraillage") or {}
+    return esc(f.get("choix") or "—")
+
+
+def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
+    out = ["<h3>6.5 Dalles et balcons</h3>"]
+    if not dalles and not balcons:
+        return "".join(out + ["<p>Aucune dalle ni aucun balcon calculé.</p>"])
+    if dalles:
+        out.append("<p>Les dalles pleines sont calculées comme des panneaux rectangulaires uniformément chargés, appuyés sur "
+                   "leur contour (BAEL A.8.2). Avec " + im(r"\rho = l_x / l_y") + ", un panneau tel que " + im(r"\rho < 0{,}4")
+                   + " ne porte que dans le sens " + im("l_x") + " ; sinon, les moments isostatiques sont (Annexe E3) :</p>")
+        out.append(EQ(r"M_{0x} = \mu_x \, p_u \, l_x^2 \;,\qquad M_{0y} = \mu_y \, M_{0x} \;,\qquad "
+                      r"\mu_x = \frac{1}{8 \left( 1 + 2{,}4 \, \rho^3 \right)} \;,\qquad \mu_y = \rho^3 \left( 1{,}9 - 0{,}9 \, \rho \right) \ge 0{,}25"))
+        out.append("<p>Les moments en travée et sur appuis tiennent compte de la continuité du panneau, avec "
+                   + im(r"M_t + \frac{M_w + M_e}{2} \ge 1{,}25 \, M_0") + " (A.8.2,32). Les dalles sont sans armatures d'effort "
+                   "tranchant lorsque " + im(r"\tau_u \le 0{,}05 \, f_{c28}") + " (A.5.2,2). Le calcul de la flèche est dispensé si "
+                   + im(r"h / l_x \ge M_{tx} / (20 \, M_{0x})") + " et " + im(r"A_x / (b \, d) \le 2 / f_e")
+                   + " (B.7.5) ; sinon, la dalle est signalée et sa flèche doit être calculée.</p>")
+        lignes = []
+        for i, d in enumerate(dalles):
+            r = d.get("resultats") or {}
+            lignes.append([esc(d.get("nom") or f"D{i + 1}"), esc(d.get("niveau") or "—"),
+                           f"{fr(d.get('lx_m'))} × {fr(d.get('ly_m'))}", fr(d.get("h_cm"), 0), fr(d.get("rho"), 2),
+                           fr((d.get("charges") or {}).get("pu_kn_m2"), 2), fr(d.get("m0x_knm"), 2),
+                           _choix(r.get("x_travee")), _choix(r.get("y_travee")), _choix(r.get("appuis")), etat(bool(d.get("verifie")))])
+        out.append(tableau(["Repère", "Niv.", ent(im(r"l_x \times l_y"), "m"), ent("h", "cm"), im(r"\rho"), ent(im("p_u"), "kN/m²"),
+                            ent(im("M_{0x}"), "kN·m/m"), "Travée x", "Travée y", "Chapeaux", "État"],
+                           lignes, ["", "", "c", "n", "n", "n", "n", "", "", "", "c"],
+                           largeurs=[8, 6, 11, 5, 5, 7, 8, 12, 12, 12, 14], titre="Dalles pleines"))
+        d = max(dalles, key=lambda x: x.get("m0x_knm") or 0)
+        r = d.get("resultats") or {}
+        x = r.get("x_travee") or {}
+        c = d.get("charges") or {}
+        out.append(f"<h4>Exemple de calcul : dalle la plus sollicitée, {esc(_nom(d, 0, 'D'))}</h4>")
+        out.append(calcul([
+            ("Charges", im(rf"p_u = 1{{,}}35 \times {tx(c.get('g_kn_m2'))} + 1{{,}}5 \times {tx(c.get('q_kn_m2'))}"), f"{fr(c.get('pu_kn_m2'), 2)} kN/m²"),
+            ("Élancement", im(rf"\rho = \frac{{{tx(d.get('lx_m'))}}}{{{tx(d.get('ly_m'))}}}"), fr(d.get("rho"), 3)),
+            ("Moment isostatique", im(rf"M_{{0x}} = {tx(d.get('mu_x'), 4)} \times {tx(c.get('pu_kn_m2'), 3)} \times {tx(d.get('lx_m'))}^2"), f"{fr(d.get('m0x_knm'), 2)} kN·m/m"),
+            ("Moment en travée", im(rf"M_{{tx}} = {tx((d.get('coefficients') or {}).get('travee'))} \, M_{{0x}}"), f"{fr(x.get('m_elu_knm'), 2)} kN·m/m"),
+            ("Moment réduit", im(rf"\mu = \frac{{M_{{tx}}}}{{b \, d^2 \, f_{{bu}}}} \;,\; d = {tx(x.get('d_m'), 3)}\ \text{{m}}"), fr(x.get("mu"), 4)),
+            ("Acier à l'ELU", im(r"A_s = \frac{M_{tx}}{Z \, f_{su}}"), f"{fr(x.get('as_elu_cm2_m'), 2)} cm²/m"),
+            ("Acier minimal", im(r"A_{\min} = \max \left( \rho_0 \, \frac{3 - \rho}{2} \, b \, h \;;\; 0{,}23 \, b \, d \, \frac{f_{t28}}{f_e} \right)"), f"{fr(x.get('as_min_cm2_m'), 2)} cm²/m"),
+            ("Acier mis en place", _choix(x), f"{fr((x.get('ferraillage') or {}).get('as_fournie_cm2_m'), 2)} cm²/m"),
+            _fleche(d),
+        ]))
+    if balcons:
+        out.append("<p>Les balcons sont calculés comme des consoles encastrées, par bande de 1 m. Les aciers principaux sont "
+                   "placés en <b>nappe supérieure</b>, zone tendue de la console, et prolongés dans la dalle intérieure. "
+                   "Le moment d'encastrement tient compte du garde-corps " + im("P") + " au bord libre et de la poussée "
+                   + im("H") + " sur la main courante, à la hauteur " + im("h_g") + " :</p>")
+        out.append(EQ(r"M_u = 1{,}35 \left( \frac{g \, l^2}{2} + P \, l \right) + 1{,}5 \left( \frac{q \, l^2}{2} + H \, h_g \right) \;,\qquad "
+                      r"V_u = 1{,}35 \left( g \, l + P \right) + 1{,}5 \, q \, l"))
+        lignes = []
+        for i, b in enumerate(balcons):
+            lignes.append([esc(b.get("nom") or f"B{i + 1}"), esc(b.get("niveau") or "—"), fr(b.get("longueur_m")), fr(b.get("h_cm"), 0),
+                           fr(b.get("mu_knm"), 2), fr(b.get("vu_kn"), 2), _choix(b.get("nappe_superieure")), _choix(b.get("repartition")),
+                           fr(b.get("prolongement_chapeaux_m")), etat(bool(b.get("verifie")))])
+        out.append(tableau(["Repère", "Niveau", ent("l", "m"), ent("h", "cm"), ent(im("M_u"), "kN·m/m"), ent(im("V_u"), "kN/m"),
+                            "Nappe supérieure", "Répartition", ent("Ancrage", "m"), "État"],
+                           lignes, ["", "", "n", "n", "n", "n", "", "", "n", "c"],
+                           largeurs=[8, 8, 6, 6, 10, 9, 15, 14, 11, 13], titre="Balcons en porte-à-faux"))
+        b = max(balcons, key=lambda x: x.get("mu_knm") or 0)
+        c = b.get("charges") or {}
+        s = b.get("nappe_superieure") or {}
+        els = s.get("els") or {}
+        l = b.get("longueur_m")
+        out.append(f"<h4>Exemple de calcul : balcon le plus sollicité, {esc(_nom(b, 0, 'B'))}</h4>")
+        out.append(calcul([
+            ("Charges", im(rf"g = {tx(c.get('g_kn_m2'))}\ \text{{kN/m²}} \;,\; q = {tx(c.get('q_kn_m2'))}\ \text{{kN/m²}} \;,\; P = {tx(c.get('garde_corps_kn_m'))}\ \text{{kN/m}}"), ""),
+            ("Moment d'encastrement", im(rf"M_u = 1{{,}}35 \left( \frac{{{tx(c.get('g_kn_m2'))} \times {tx(l)}^2}}{{2}} + {tx(c.get('garde_corps_kn_m'))} \times {tx(l)} \right) + 1{{,}}5 \left( \frac{{{tx(c.get('q_kn_m2'))} \times {tx(l)}^2}}{{2}} + {tx(c.get('poussee_kn_m'))} \times {tx(c.get('hauteur_main_courante_m'))} \right)"),
+             f"{fr(b.get('mu_knm'), 2)} kN·m/m"),
+            ("Moment réduit", im(rf"\mu = \frac{{M_u}}{{b \, d^2 \, f_{{bu}}}} \;,\; d = {tx(b.get('d_m'), 3)}\ \text{{m}}"), fr(s.get("mu"), 4)),
+            ("Acier à l'ELU", im(r"A_s = \frac{M_u}{Z \, f_{su}}"), f"{fr(s.get('as_elu_cm2_m'), 2)} cm²/m"),
+            ("ELS : acier", im(rf"\sigma_{{st}} = {tx(els.get('sigma_st_mpa'), 1)}\ \text{{MPa}} \le {tx(els.get('sigma_st_lim_mpa'), 1)}\ \text{{MPa}}"),
+             etat(bool(els.get("sigma_st_ok", True)))),
+            ("Acier mis en place (haut)", _choix(s), f"{fr((s.get('ferraillage') or {}).get('as_fournie_cm2_m'), 2)} cm²/m"),
+            ("Ancrage des chapeaux", im(rf"\max \left( l \;;\; l_s \right) = \max \left( {tx(l)} \;;\; {tx(b.get('ls_m'))} \right)"),
+             f"{fr(b.get('prolongement_chapeaux_m'))} m"),
+            ("Effort tranchant", im(rf"\tau_u = {tx((b.get('cisaillement') or {}).get('tau_u_mpa'), 3)}\ \text{{MPa}} \le 0{{,}}05 \, f_{{c28}}"),
+             etat(bool((b.get("cisaillement") or {}).get("ok", True)))),
+            _fleche(b),
+        ]))
+        out.append("<p class='note'>" + " ".join(esc(x) for x in (b.get("dispositions") or [])) + "</p>")
+    return "".join(out)
+
+
 def quantites(inp: dict) -> str:
     out = [h2(7, "s7", "Quantités de béton et d'acier")]
     lot = inp.get("lot")
@@ -824,7 +921,8 @@ def quantites(inp: dict) -> str:
 def conclusion(inp: dict, bur: dict, date: str) -> str:
     reserves = []
     for fam, verif, nom in (("poteaux", ok_poteau, "Poteau"), ("poutres", ok_poutre, "Poutre"),
-                            ("semelles_isolees", ok_semelle, "Semelle"), ("voiles", ok_voile, "Voile")):
+                            ("semelles_isolees", ok_semelle, "Semelle"), ("voiles", ok_voile, "Voile"),
+                            ("dalles", lambda d: bool(d.get("verifie")), "Dalle"), ("balcons", lambda b: bool(b.get("verifie")), "Balcon")):
         for i, e in enumerate(inp.get(fam) or []):
             if not verif(e):
                 reserves.append(f"{nom} {_nom(e, i, nom[0])}")
@@ -868,6 +966,7 @@ def construire(inp: dict, bur: dict) -> str:
         section_poteaux(inp.get("poteaux") or [], m), section_poutres(inp.get("poutres") or [], m),
         section_semelles((inp.get("semelles_isolees") or []) + (inp.get("semelles_filantes") or []), m),
         section_voiles(inp.get("voiles") or [], m),
+        section_dalles(inp.get("dalles") or [], inp.get("balcons") or [], m),
         quantites(inp), conclusion(inp, bur, date),
     ]
     return (f'<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Note de calcul — {esc(titre)}</title>'

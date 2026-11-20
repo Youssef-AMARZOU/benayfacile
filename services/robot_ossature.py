@@ -110,6 +110,28 @@ def _resume(oss: dict) -> dict:
     return {k: len(oss.get(k, [])) for k in ("poteaux", "poutres", "semelles", "voiles")}
 
 
+DEBORD_BALCON = 0.30   # m : panneau débordant de l'emprise des poteaux de plus que cela → porte-à-faux
+
+
+def classer_dalle(points: Sequence[Tuple[float, float, float]],
+                  emprise: Optional[Tuple[float, float, float, float]]) -> dict:
+    """Panneau horizontal : dimensions en plan (lx ≤ ly) et porte-à-faux éventuel.
+
+    `emprise` = (xmin, xmax, ymin, ymax) des poteaux. Un panneau qui dépasse cette emprise de plus
+    de DEBORD_BALCON est un balcon (ou contient un balcon) : son débord est le porte-à-faux. Ce
+    repérage géométrique est à confirmer par l'ingénieur.
+    """
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    cotes = sorted((max(xs) - min(xs), max(ys) - min(ys)))
+    debord = 0.0
+    if emprise:
+        x0, x1, y0, y1 = emprise
+        debord = max(x0 - min(xs), max(xs) - x1, y0 - min(ys), max(ys) - y1, 0.0)
+    balcon = debord > DEBORD_BALCON
+    return {"lx_m": round(cotes[0], 2), "ly_m": round(cotes[1], 2),
+            "type": "balcon" if balcon else "dalle", "porte_a_faux_m": round(debord, 2) if balcon else None}
+
+
 # ───────────────────────── simulation R+4 ─────────────────────────
 
 # Hypothèses de charges de la simulation (habitation, BAEL / DTU usuels)
@@ -536,14 +558,24 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                          "mx_knm": round(mx, 1), "my_knm": round(my, 1)})
 
     # voiles : panneaux verticaux ; géométrie lue, efforts réduits à saisir (non exposés simplement par l'API)
-    voiles = []
+    # dalles et balcons : panneaux horizontaux ; géométrie et épaisseur lues, charges g et q à saisir
+    voiles, dalles = [], []
+    pieds_xy = [(bas[0], bas[1]) for bas, _ in pieds.values()] or [(x, y) for x, y, _ in noeuds.values()]
+    emprise = (min(p[0] for p in pieds_xy), max(p[0] for p in pieds_xy),
+               min(p[1] for p in pieds_xy), max(p[1] for p in pieds_xy)) if pieds_xy else None
     try:
         for obj in _iter_collection(struct.Objects.GetAll(), "IRobotObjObject"):
             pts = _points_panneau(obj)
             if len(pts) < 3:
                 continue
             zs = [p[2] for p in pts]
-            if max(zs) - min(zs) < 0.5:          # panneau horizontal : dalle
+            if max(zs) - min(zs) < 0.5:          # panneau horizontal : dalle ou balcon
+                c = classer_dalle(pts, emprise)
+                prefixe = "B" if c["type"] == "balcon" else "D"
+                dalles.append({"id": f"{prefixe}{obj.Number}", "nom": f"{prefixe} {obj.Number}",
+                               "niveau": nom_niveau(max(indice_niveau(min(zs), niveaux) - 1, 0)),
+                               "h_cm": epaisseur_depuis_nom(_label(obj, t_epaisseur)), **c,
+                               "g_sup_kn_m2": None, "q_kn_m2": None})
                 continue
             horiz = max(math.dist(a[:2], b[:2]) for a in pts for b in pts)
             voiles.append({"id": f"V{obj.Number}", "nom": f"V {obj.Number}",
@@ -553,6 +585,11 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                            "n_kn": None, "m_knm": None, "v_kn": None})
         if voiles:
             remarques.append("Voiles : géométrie lue dans Robot ; saisissez N, M, V (résultats réduits) avant calcul.")
+        nb_b = sum(1 for d in dalles if d["type"] == "balcon")
+        if dalles:
+            remarques.append(f"Dalles : {len(dalles) - nb_b} panneau(x) de plancher et {nb_b} balcon(s) en porte-à-faux repérés "
+                             "dans Robot (dimensions et épaisseur lues). Calculez-les dans « Dalles et balcons » en saisissant "
+                             "les charges g et q ; vérifiez le repérage des balcons (panneaux débordant des poteaux).")
     except Exception as e:
         remarques.append(f"Panneaux : lecture impossible ({e}).")
 
@@ -565,7 +602,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
     if not (poteaux or poutres or voiles):
         remarques.append("Aucun poteau, poutre ni voile reconnu dans ce modèle.")
 
-    oss = {"poteaux": poteaux, "poutres": poutres, "semelles": semelles, "voiles": voiles,
+    oss = {"poteaux": poteaux, "poutres": poutres, "semelles": semelles, "voiles": voiles, "dalles": dalles,
            "niveaux": [nom_niveau(i) for i in range(max(len(niveaux) - 1, 1))],
            "trame_x_m": trame_x, "trame_y_m": trame_y,
            "source": "robot", "cas_elu": comb_elu[0][0] if comb_elu and len(comb_elu) == 1 else None,

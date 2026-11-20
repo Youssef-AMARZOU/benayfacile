@@ -48,6 +48,8 @@ class NoteInput(BaseModel):
     semelles_isolees: Optional[list] = None
     semelles_filantes: Optional[list] = None
     voiles: Optional[list] = None
+    dalles: Optional[list] = None
+    balcons: Optional[list] = None
     bureau: Optional[dict] = None
 
 

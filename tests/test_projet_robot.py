@@ -292,3 +292,29 @@ def test_robot_occupe_ou_ferme():
     assert "occupé" in rs.expliquer_erreur_robot(ComError(-2147418111, "Appel rejeté", None, None))
     assert "fermé" in rs.expliquer_erreur_robot(ComError(-2147023174, "Serveur RPC indisponible", None, None))
     assert rs.expliquer_erreur_robot(RuntimeError("aucun projet")) == "Aucun projet"
+
+
+def test_classer_dalle_et_balcon():
+    emprise = (0.0, 12.0, 0.0, 10.0)                       # poteaux de x = 0 à 12, y = 0 à 10
+    dalle = ro.classer_dalle([(0, 0, 3), (5, 0, 3), (5, 4, 3), (0, 4, 3)], emprise)
+    assert dalle == {"lx_m": 4.0, "ly_m": 5.0, "type": "dalle", "porte_a_faux_m": None}
+    balcon = ro.classer_dalle([(2, 10, 3), (6, 10, 3), (6, 11.5, 3), (2, 11.5, 3)], emprise)
+    assert balcon["type"] == "balcon" and balcon["porte_a_faux_m"] == 1.5 and balcon["lx_m"] == 1.5
+    assert ro.classer_dalle([(0, 0, 3), (5, 0, 3), (5, 10.2, 3)], emprise)["type"] == "dalle"   # débord ≤ 30 cm
+
+
+def test_panneaux_horizontaux_lus_comme_dalles():
+    projet = faux_projet()
+    pts = lambda *p: NS(DefPoints=Coll([NS(X=x, Y=y, Z=z) for x, y, z in p]))
+    projet.Structure.Objects = NS(GetAll=lambda: Coll([
+        NS(Number=20, Main=pts((0, 0, 3), (6, 0, 3), (6, 0.2, 3), (0, 0.2, 3)), GetLabelName=lambda t: "DALLE 16"),
+        NS(Number=21, Main=pts((6, 0, 3), (7.5, 0, 3), (7.5, 0.2, 3), (6, 0.2, 3)), GetLabelName=lambda t: "BALCON 18"),
+        NS(Number=30, Main=pts((0, 0, 0), (6, 0, 0), (6, 0, 3), (0, 0, 3)), GetLabelName=lambda t: "VOILE 18"),
+    ]))
+    o = ro.extraire_ossature_com(projet)
+    par_id = {d["id"]: d for d in o["dalles"]}
+    assert par_id["D20"]["type"] == "dalle" and par_id["D20"]["h_cm"] == 16.0 and par_id["D20"]["niveau"] == "RDC"
+    assert par_id["B21"]["type"] == "balcon" and par_id["B21"]["porte_a_faux_m"] == 1.5 and par_id["B21"]["h_cm"] == 18.0
+    assert par_id["D20"]["g_sup_kn_m2"] is None                          # charges à saisir, jamais inventées
+    assert len(o["voiles"]) == 1
+    assert any("1 balcon(s) en porte-à-faux" in r for r in o["remarques"])

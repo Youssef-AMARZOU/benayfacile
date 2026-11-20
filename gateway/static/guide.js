@@ -19,6 +19,18 @@ const AIDE = {
   'pt-mu': "Moment fléchissant maximal en travée, à l'ELU.",
   'pt-vu': "Effort tranchant maximal à l'ELU, près de l'appui.",
   'pt-ms': "Moment de service (ELS). Laissé vide, il est pris égal à Mu / 1,5.",
+  'd-lx': "Petite portée du panneau, entre nus des poutres ou voiles qui le portent.",
+  'd-ly': "Grande portée du panneau. Si lx/ly < 0,4, la dalle ne porte que dans le sens lx.",
+  'd-h': "Épaisseur. Pré-dimensionnement courant : lx/40 à lx/35 (panneau continu), lx/30 (isolé), 16 cm au moins entre logements.",
+  'd-g': "Revêtement, chape, enduit et cloisons ; le poids propre (25 kN/m³ × h) est ajouté automatiquement.",
+  'd-q': "Habitation 1,5 ; bureaux 2,5 ; escaliers et circulations 2,5 kN/m² (NF P 06-001).",
+  'd-cont': "Rive : panneau en bord de plancher. Intermédiaire : panneau entouré d'autres panneaux.",
+  'b-l': "Longueur en console, du nu de la poutre ou du voile d'appui jusqu'au bord libre.",
+  'b-h': "Épaisseur à l'encastrement. Pré-dimensionnement courant : au moins l/10.",
+  'b-g': "Revêtement, forme de pente et étanchéité ; le poids propre est ajouté automatiquement.",
+  'b-q': "Balcons : 3,5 kN/m² (NF P 06-001).",
+  'b-p': "Poids du garde-corps, de l'acrotère ou du muret au bord libre. Un mur maçonné en bout pèse beaucoup : ne l'oubliez pas.",
+  'b-hh': "Poussée horizontale des personnes sur la main courante (à prendre selon l'usage).",
   fis: "Préjudiciable pour les éléments exposés aux intempéries ; très préjudiciable en milieu agressif (bord de mer, sol).",
   ns: "Effort normal de service transmis par le poteau (G + Q).",
   nu: "Effort normal ELU. Laissé vide, 1,5 × Ns est utilisé.",
@@ -147,6 +159,16 @@ const VERDICTS = {
     if (!r.tau_ok) pb.push("Augmentez l'épaisseur (cisaillement trop élevé).");
     return boiteVerdict(!pb.length,
       `Compression maximale ${fmt(r.sigma_max_mpa, 2)} MPa${r.as_rive_cm2 ? `, aciers de rive ${fmt(r.as_rive_cm2, 2)} cm²` : ''}.`, pb);
+  },
+  dalle(r) {
+    const pb = (r.remarques || []).filter(x => !/élancée/.test(x)).map(x => x.replace(/^[a-z_]+ : /, ''));
+    return boiteVerdict(r.verifie,
+      `Dalle ${r.un_sens ? 'portant dans un seul sens' : 'portant dans les deux sens'}. Travée x : ${r.resultats?.x_travee?.ferraillage?.choix || '—'} ; travée y : ${r.resultats?.y_travee?.ferraillage?.choix || '—'} ; chapeaux : ${r.resultats?.appuis?.ferraillage?.choix || '—'}.`, pb);
+  },
+  balcon(r) {
+    const pb = (r.remarques || []).filter(x => !/élancé/.test(x));
+    return boiteVerdict(r.verifie,
+      `Moment d'encastrement ${fmt(r.mu_knm, 2)} kN·m/m. Aciers principaux en haut : ${r.nappe_superieure?.ferraillage?.choix || '—'}, prolongés de ${fmt(r.prolongement_chapeaux_m, 2)} m dans la dalle intérieure.`, pb);
   },
   sismique(r) {
     const part = r.W_kn ? Math.round(100 * r.F_base_kn / r.W_kn) : null;
