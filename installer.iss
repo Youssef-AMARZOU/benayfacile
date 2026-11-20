@@ -1,6 +1,6 @@
 ﻿; Installateur Windows de Bénayfacile (Inno Setup 6) — compilé par build_exe.bat
 #define AppName "Bénayfacile"
-#define AppVersion "0.4.0"
+#define AppVersion "0.4.1"
 #define AppExe "Benayfacile.exe"
 
 [Setup]
@@ -53,3 +53,21 @@ Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName}"; Flags: nowait pos
 
 ; Les données de l'utilisateur (%LOCALAPPDATA%\Benayfacile : bureau.json, notes, DXF)
 ; sont volontairement conservées à la désinstallation.
+
+[Code]
+// Upgrade propre : Inno n'écrase que les fichiers présents dans le nouveau build
+// et ne supprime jamais ceux devenus obsolètes. Un reliquat comme
+// _internal\simplejson\ (seulement _speedups.pyd, sans __init__.py) est alors
+// vu par Python comme un « namespace package » : requests fait
+// `import simplejson` (qui réussit !) puis échoue sur
+// `from simplejson import JSONDecodeError` → l'app ne démarre pas.
+// On vide donc {app} avant la copie. Les données utilisateur ne sont pas dans
+// {app} et sont conservées (voir commentaire ci-dessus).
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    if DirExists(ExpandConstant('{app}')) then
+      DelTree(ExpandConstant('{app}'), True, True, True);
+  end;
+end;
