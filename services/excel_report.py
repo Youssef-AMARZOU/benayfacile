@@ -1,7 +1,8 @@
 """Classeur Excel des résultats du calcul en lot (« Note de calcul » tabulaire).
 
 Une feuille de synthèse, puis une feuille par famille : Poteaux, Poutres,
-Semelles, Voiles. Les valeurs sont de vrais nombres (pas du texte) pour que le
+Semelles, Voiles ; enfin le métré béton et acier (détail par élément et
+récapitulatif par famille et par diamètre, voir metre.py). Les valeurs sont de vrais nombres (pas du texte) pour que le
 bureau d'études puisse trier, filtrer et recalculer ; chaque ligne garde son
 état (vérifié, à revoir, incomplet, erreur) et la raison.
 
@@ -276,6 +277,7 @@ def classeur_resultats(lot: dict, projet: dict, bureau: Optional[dict] = None) -
 
     for cle, nom, normes, colonnes in FAMILLES:
         _feuille(wb, nom, normes, colonnes, lot.get(cle) or [], projet)
+    wb.metre = feuilles_metre(wb, lot, projet)
     return wb
 
 
@@ -283,3 +285,120 @@ def classeur_octets(lot: dict, projet: dict, bureau: Optional[dict] = None) -> b
     flux = io.BytesIO()
     classeur_resultats(lot, projet, bureau).save(flux)
     return flux.getvalue()
+
+
+# ───────────────────────── métré béton et acier ─────────────────────────
+
+NOMS_FAMILLE = {"poteaux": "Poteau", "poutres": "Poutre", "semelles": "Semelle", "voiles": "Voile"}
+
+METRE = [
+    ("Élément", "", lambda l: NOMS_FAMILLE.get(l["famille"]), None, 10),
+    ("Repère", "", lambda l: l["nom"], None, 12),
+    ("Axe", "", lambda l: l["axe"], None, 7),
+    ("Niveau", "", lambda l: l["niveau"], None, 9),
+    ("Type", "", lambda l: l["type"], None, 7),
+    ("Section", "cm", lambda l: l["section"], None, 16),
+    ("Hauteur / portée", "m", lambda l: l["longueur_m"], "0.00", 10),
+    ("Béton", "m³", lambda l: l["beton_m3"], "0.000", 10),
+    ("Aciers principaux", "", lambda l: l["principal"], None, 13),
+    ("Ø princ.", "mm", lambda l: l["principal_d_mm"], "0", 8),
+    ("Nb barres", "", lambda l: l["principal_nb"], "0", 8),
+    ("Long. unitaire", "m", lambda l: l["principal_l_m"], "0.00", 10),
+    ("Long. totale", "m", lambda l: round(l["principal_nb"] * l["principal_l_m"], 2) if l["principal_nb"] else None, "0.00", 10),
+    ("Poids princ.", "kg", lambda l: l["principal_kg"], "0.0", 10),
+    ("Ø cadres", "mm", lambda l: l["cadres_d_mm"], "0", 8),
+    ("Nb cadres", "", lambda l: l["cadres_nb"], "0", 8),
+    ("Long. unit. cadre", "m", lambda l: l["cadres_l_m"], "0.00", 10),
+    ("Poids cadres", "kg", lambda l: l["cadres_kg"], "0.0", 10),
+    ("Autres aciers", "kg", lambda l: l["autres_kg"], "0.0", 10),
+    ("Poids total", "kg", lambda l: l["acier_kg"], "0.0", 10),
+    ("Ratio", "kg/m³", lambda l: l["ratio_kg_m3"], "0.0", 9),
+]
+
+
+def _table(ws, r: int, entetes: Sequence[str], rangs: Sequence[Sequence], formats: Sequence[Optional[str]],
+           total: Optional[Sequence] = None) -> int:
+    """Petit tableau à en-tête grisé ; renvoie la ligne qui suit."""
+    for j, t in enumerate(entetes, start=1):
+        c = ws.cell(row=r, column=j, value=t)
+        c.font = Font(bold=True, color=GRAPHITE)
+        c.fill = PatternFill("solid", fgColor=FOND_TETE)
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = Border(bottom=TRAIT_FORT, top=TRAIT)
+    for rang in rangs:
+        r += 1
+        for j, (v, fmt) in enumerate(zip(rang, formats), start=1):
+            c = ws.cell(row=r, column=j, value=v)
+            c.border = Border(bottom=TRAIT)
+            if fmt and isinstance(v, (int, float)):
+                c.number_format = fmt
+    if total:
+        r += 1
+        for j, (v, fmt) in enumerate(zip(total, formats), start=1):
+            c = ws.cell(row=r, column=j, value=v)
+            c.font = Font(bold=True)
+            c.border = Border(top=TRAIT_FORT)
+            if fmt and isinstance(v, (int, float)):
+                c.number_format = fmt
+    return r + 2
+
+
+def feuilles_metre(wb: Workbook, lot: dict, projet: dict) -> dict:
+    """Feuilles « Métré détaillé » (une ligne par élément) et « Récapitulatif métré »."""
+    from metre import metre
+    m = metre(lot)
+    _feuille(wb, "Métré détaillé", "béton et acier par élément", METRE, m["lignes"], projet)
+
+    ws = wb.create_sheet("Récapitulatif métré")
+    _entete(ws, projet, "Récapitulatif du métré", "béton et acier", 7)
+    r = 5
+    ws.cell(row=r, column=1, value="Totaux").font = Font(bold=True, size=12, color=GRAPHITE)
+    r += 1
+    for k, v, fmt, u in [("Nombre d'éléments", len(m["lignes"]), "0", ""),
+                         ("Béton", m["beton_total_m3"], "0.000", "m³"),
+                         ("Acier", m["acier_total_kg"], "#,##0.0", "kg"),
+                         ("Ratio acier / béton armé", m["ratio_kg_m3"], "0.0", "kg/m³"),
+                         (f"Barres de {m['longueur_commerciale_m']:g} m", m["barres_total"], "0", "barres")]:
+        ws.cell(row=r, column=1, value=k).font = Font(color="4A5560")
+        c = ws.cell(row=r, column=2, value=v)
+        c.font = Font(bold=True)
+        c.number_format = fmt
+        ws.cell(row=r, column=3, value=u).font = Font(color="7D8790")
+        r += 1
+    r += 1
+    ws.cell(row=r, column=1, value="Par famille").font = Font(bold=True, size=12, color=GRAPHITE)
+    r = _table(ws, r + 1, ["Famille", "Éléments", "Béton (m³)", "Acier (kg)", "Ratio (kg/m³)", "Détail acier (kg)", "Non ferraillés"],
+               [[f["famille"], f["elements"], f["beton_m3"], f["acier_kg"], f["ratio_kg_m3"],
+                 " ; ".join(f"{u} {kg:.1f}" for u, kg in f["acier_par_usage_kg"].items()), f["non_ferrailles"] or None]
+                for f in m["familles"]],
+               [None, "0", "0.000", "#,##0.0", "0.0", None, "0"],
+               ["Total", len(m["lignes"]), m["beton_total_m3"], m["acier_total_kg"], m["ratio_kg_m3"], None, None])
+    ws.cell(row=r, column=1, value="Par diamètre et usage").font = Font(bold=True, size=12, color=GRAPHITE)
+    L = m["longueur_commerciale_m"]
+    r = _table(ws, r + 1, ["Diamètre", "Usage", "kg/m", "Longueur totale (m)", "Poids (kg)", f"Barres de {L:g} m"],
+               [[f"HA{d['diametre_mm']}", d["usage"], d["kg_m"], d["longueur_m"], d["poids_kg"], d["barres"]]
+                for d in m["par_diametre_usage"]],
+               [None, None, "0.000", "#,##0.00", "#,##0.0", "0"])
+    ws.cell(row=r, column=1, value="Par diamètre (toutes utilisations)").font = Font(bold=True, size=12, color=GRAPHITE)
+    r = _table(ws, r + 1, ["Diamètre", "Longueur totale (m)", "Poids (kg)", "% du total", f"Barres de {L:g} m"],
+               [[f"HA{d['diametre_mm']}", d["longueur_m"], d["poids_kg"], d["part_pct"], d["barres"]] for d in m["par_diametre"]],
+               [None, "#,##0.00", "#,##0.0", "0.0", "0"],
+               ["Total", round(sum(d["longueur_m"] for d in m["par_diametre"]), 2), m["acier_total_kg"], 100.0, m["barres_total"]])
+    ws.cell(row=r, column=1, value="Hypothèses du métré").font = Font(bold=True, size=12, color=GRAPHITE)
+    notes = list(m["hypotheses"])
+    if m["sans_beton"]:
+        notes.append("Sans béton (dimension manquante) : " + ", ".join(m["sans_beton"]) + ".")
+    for h in notes:
+        r += 1
+        ws.cell(row=r, column=1, value=f"• {h}").font = Font(size=9, color="4A5560")
+    if abs(m["acier_total_kg"] - m["poids_nomenclature_kg"]) > 0.5:
+        r += 2
+        ws.cell(row=r, column=1, value=f"ALERTE ECART ARITHMETIQUE : métré {m['acier_total_kg']} kg, nomenclature des plans "
+                                        f"{m['poids_nomenclature_kg']} kg.").font = Font(bold=True, color=ARMATURE)
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 18
+    for col, w in zip("CDEFG", (14, 18, 14, 48, 14)):
+        ws.column_dimensions[col].width = w
+    return {"beton_total_m3": m["beton_total_m3"], "acier_total_kg": m["acier_total_kg"],
+            "ratio_kg_m3": m["ratio_kg_m3"], "barres_total": m["barres_total"],
+            "longueur_commerciale_m": m["longueur_commerciale_m"]}

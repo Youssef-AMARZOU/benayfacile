@@ -264,6 +264,7 @@ class PlansInput(BaseModel):
     lot: dict                          # réponse de POST /lot (moteur)
     trame_x_m: List[float] = []
     trame_y_m: List[float] = []
+    dalles: List[dict] = []            # panneaux lus dans Robot (géométrie en plan), pour les plans de coffrage
     bureau: Optional[dict] = None
 
 
@@ -276,7 +277,7 @@ def _slug(texte: str) -> str:
 def plans(inp: PlansInput):
     """Dossier de plans de ferraillage de tout le modèle (un DXF, plusieurs planches A1)."""
     projet = {"projet": inp.projet, "client": inp.client, "site": inp.site, "indice": inp.indice}
-    doc, resume = dessiner_plans(inp.lot, projet, lire_bureau(inp.bureau), inp.trame_x_m, inp.trame_y_m)
+    doc, resume = dessiner_plans(inp.lot, projet, lire_bureau(inp.bureau), inp.trame_x_m, inp.trame_y_m, inp.dalles)
     now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin = OUT / f"Plans_Ferraillage_{_slug(inp.projet)}_{now}.dxf"
     doc.saveas(chemin)

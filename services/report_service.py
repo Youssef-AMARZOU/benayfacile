@@ -6,6 +6,7 @@ Port : 8004
 from __future__ import annotations
 import datetime
 import html
+import io
 import json
 import pathlib
 from typing import Any, Optional
@@ -17,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
-from excel_report import classeur_octets
+from excel_report import classeur_octets, classeur_resultats  # noqa: F401
 from note_calcul import construire
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -105,11 +106,14 @@ def excel(inp: ExcelInput):
     except Exception:
         bur = {}
     projet = {"projet": inp.projet, "client": inp.client, "site": inp.site, "indice": inp.indice}
-    octets = classeur_octets(inp.lot, projet, bur)
+    wb = classeur_resultats(inp.lot, projet, bur)
+    flux = io.BytesIO()
+    wb.save(flux)
+    octets = flux.getvalue()
     now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin = OUT / f"Note_de_Calcul_{_slug(inp.projet)}_{now}.xlsx"
     chemin.write_bytes(octets)
-    return {"fichier": chemin.name, "octets": len(octets), "dossier": str(OUT)}
+    return {"fichier": chemin.name, "octets": len(octets), "dossier": str(OUT), "metre": wb.metre}
 
 
 @app.get("/excel/{nom}")

@@ -200,16 +200,19 @@ function synthesisPayload() {
     voiles: state.voiles, dalles: state.dalles, balcons: state.balcons, planchers: state.planchers, bureau: state.bureau,
   };
 }
-async function dossierPlansDxf(lot, trame, el) {
+async function dossierPlansDxf(lot, trame, el, dalles) {
   el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
   const p = state.project;
   const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot,
-      trame_x_m: trame?.x || [], trame_y_m: trame?.y || [], bureau: state.bureau }) });
+      trame_x_m: trame?.x || [], trame_y_m: trame?.y || [], dalles: dalles || [], bureau: state.bureau }) });
   const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
   const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
   const planches = r.planches.map((t, i) => `<li>${String(i + 1).padStart(2, '0')} ${esc(t)}</li>`).join('');
-  el.innerHTML = `<b>${r.planches.length} planches A1</b>, une par onglet de présentation dans AutoCAD (en bas de l'écran) :`
+  const nv = r.niveaux_dessines || [];
+  el.innerHTML = `<b>${r.planches.length} planches A1</b>, une par onglet de présentation dans AutoCAD (en bas de l'écran)`
+    + (nv.length ? `, dont ${r.planches_coffrage} plans de coffrage couvrant ${nv.length} niveaux (${esc(nv[0])} à ${esc(nv[nv.length - 1])})` : '')
+    + ' :'
     + `<ol class="planches">${planches}</ol>`
     + `${types} — ${r.elements_dessines} éléments dessinés, ${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
     + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
@@ -422,6 +425,7 @@ function tabProjet() {
         }
         state.lot = vue.lot;
         state.trame = { x: vue.modele?.ossature?.trame_x_m || [], y: vue.modele?.ossature?.trame_y_m || [] };
+        state.dallesModele = vue.modele?.ossature?.dalles || [];
         renderSynthesis();
         toast(`${n} éléments envoyés à la synthèse.`);
       });
@@ -434,7 +438,13 @@ function tabProjet() {
           const r = await api('/api/report/excel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot, bureau: state.bureau }) });
           const url = '/api/report/excel/' + encodeURIComponent(r.fichier);
-          el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code>.<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+          const m = r.metre || {};
+          const nf = (v, d = 1) => (v ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: d });
+          el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code> : résultats par famille, `
+            + `<b>métré détaillé</b> (une ligne par élément) et <b>récapitulatif</b>.`
+            + (r.metre ? `<br>Béton ${nf(m.beton_total_m3, 2)} m³ · acier ${nf(m.acier_total_kg, 0)} kg · `
+              + `ratio ${nf(m.ratio_kg_m3)} kg/m³ · ${nf(m.barres_total, 0)} barres de ${m.longueur_commerciale_m} m.` : '')
+            + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
         } catch (e) { afficherErreur(el, e, {}, 'Export impossible. '); }
       });
 
@@ -443,7 +453,7 @@ function tabProjet() {
         const el = $('rb-dxf-res');
         try {
           const o = vue.modele?.ossature || {};
-          await dossierPlansDxf(vue.lot, { x: o.trame_x_m, y: o.trame_y_m }, el);
+          await dossierPlansDxf(vue.lot, { x: o.trame_x_m, y: o.trame_y_m }, el, o.dalles);
         } catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
 
@@ -767,7 +777,7 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
             + 'puis « Envoyer à la synthèse » ou « Plans de ferraillage (DXF) ».</p>';
           return;
         }
-        try { await dossierPlansDxf(state.lot, state.trame, el); }
+        try { await dossierPlansDxf(state.lot, state.trame, el, state.dallesModele); }
         catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
     }

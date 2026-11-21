@@ -41,17 +41,24 @@
 - [x] Sans modèle, il explique qu'il faut la position et le niveau des éléments, et renvoie vers Lecture du modèle.
 - [x] Plus de semelle ni de trame par défaut dans l'interface.
 
-### US3 — Un plan de coffrage par niveau *(à faire)*
+### US3 — Un plan de coffrage par niveau *(livrée, première version)*
 
 > **En tant qu'** ingénieur BET, **pour** un bâtiment de N niveaux lu dans Robot, **je veux** une planche de coffrage par
 > niveau (fondation, RDC, R+1… terrasse), **pour** remettre au chantier et au dossier d'autorisation un jeu de plans
 > complet sans redessiner dans AutoCAD.
 
-- [ ] Une planche par niveau détecté : trame et axes cotés, poteaux, poutres avec leur section, voiles, repères identiques à ceux de la note.
-- [ ] Les niveaux identiques (étage courant) peuvent être regroupés sur une seule planche, avec la mention « R+2 à R+25 ».
-- [ ] Dalles, planchers à corps creux (sens de portée des poutrelles) et balcons représentés et repérés.
-- [ ] L'écran annonce, avant génération, le nombre de planches et la liste des niveaux couverts.
-- [ ] Les éléments sans position (calculés un par un) sont listés comme « non dessinés », jamais placés au hasard.
+- [x] Une planche par niveau : trame et axes cotés, poteaux et voiles coupés (hachurés), poutres en tireté avec leur
+      section, type de chaque élément (P1, Pt2, V1…) identique à la note, tableau des éléments du plancher.
+- [x] Les niveaux consécutifs identiques sont regroupés : « Coffrage plancher haut R+2 à R+4 ».
+- [x] Les poutres du niveau le plus bas sont rangées au niveau « Fondation » (planche « Coffrage niveau fondation »),
+      et non plus au RDC.
+- [x] Dalles et balcons lus dans Robot dessinés et repérés sur leur niveau (contour, épaisseur).
+- [x] L'écran annonce le nombre de plans de coffrage et les niveaux couverts.
+- [x] Un élément sans position connue est listé « position inconnue », jamais placé au hasard ; un élément non vérifié
+      est dessiné avec son nom suivi de « * ».
+- [ ] Planchers à corps creux : sens de portée des poutrelles (les panneaux Robot ne portent pas cette information).
+- [ ] Classeur Excel importé : colonnes de position pour les poutres et les voiles (aujourd'hui seuls les poteaux ont un axe).
+- [ ] Vérifier sur le modèle réel du testeur (27 niveaux, sous-sol) : regroupement, échelle et lisibilité.
 
 ### US4 — Longrines et chaînages *(à faire)*
 
@@ -64,3 +71,36 @@
 - [ ] Les autres poutres restent « Poutre », préfixe « Pt ».
 - [ ] La règle de détection (niveau, position sur la trame) est écrite dans le code et testée. Un cas ambigu est signalé, pas deviné.
 - [ ] À valider avec l'ingénieur : le chaînage reçoit-il des dispositions propres (RPS 2011, chaînages horizontaux) ?
+
+## R2 — Ce que montre la vidéo « bnayfacile » sur Instagram (21/11/2026)
+
+**Contexte.** Une vidéo sponsorisée du compte « bnayfacile » montre le parcours attendu, en darija : « GTA 6 est sorti…
+et moi j'ai un modèle dans Robot » → « le bâtiment complètement calculé » → « les plans de ferraillage en DXF » →
+« les coupes et les élévations » → « béton et acier » → « et le métré » → « tout est calculé » → « prêts pour AutoCAD ».
+
+**Ce qu'on y voit**, et l'écart avec l'application :
+
+| Montré dans la vidéo | Dans Bénayfacile | Écart |
+|---|---|---|
+| Modèle Robot avec sous-sol, mezzanine et 4 étages, lu en entier | Lecture COM ou classeur Excel | À confirmer sur un modèle avec sous-sol |
+| Un DXF « tous les étages » : vues en plan par niveau, ferraillage des voiles en série | Plans de coffrage par niveau (US3) et planches par famille | Pas encore de plan de ferraillage par niveau |
+| Coupes et élévations (voiles, poutres) | Élévation des poutres et des voiles, coupes des poteaux | Pas de coupe générale du bâtiment |
+| Métré Excel détaillé par poteau : repère, étage, type, section, hauteur, **béton (m³)**, aciers longitudinaux, cadres, **épingles**, longueurs, poids | Export Excel des résultats et nomenclature des aciers | Pas de volume de béton, pas d'épingles |
+| Récapitulatif : nombre d'éléments, béton total, acier total, **ratio kg/m³**, poids par diamètre et **nombre de barres de 12 m** | Poids par diamètre | Pas de béton, de ratio ni de barres commerciales |
+| Note de calcul des semelles en Word, tableau de toutes les semelles | Note HTML / PDF | Pas d'export Word |
+
+### US5 — Métré béton et acier *(livrée, première version)*
+
+> **En tant qu'** ingénieur ou métreur, **je veux** pour chaque élément le volume de béton et le poids d'acier, et un
+> récapitulatif avec le ratio kg/m³ et le nombre de barres de 12 m par diamètre, **pour** chiffrer le gros œuvre et
+> commander l'acier.
+
+- [x] Volume de béton par élément (poteau a × b × h, poutre b × h × l, semelle A × B × H, voile L × e × h), par famille et total.
+- [x] Feuille « Métré détaillé » : une ligne par élément (repère, axe, niveau, type, section, béton, aciers principaux, cadres, autres aciers, poids, ratio).
+- [ ] Épingles des poteaux et des voiles : à ajouter quand l'ingénieur fixe la règle (aujourd'hui annoncées « non prévues »).
+- [x] Ratio acier / béton (kg/m³) par élément, par famille et global.
+- [ ] Comparaison à une fourchette usuelle : seulement avec une source.
+- [x] Nombre de barres commerciales de 12 m par diamètre et par usage (longueur totale / 12, arrondi supérieur, chutes
+      non optimisées et dites comme telles).
+- [x] Le métré et la nomenclature des plans donnent le même poids d'acier (contrôlé ; écart signalé « ALERTE ECART ARITHMETIQUE »).
+- [ ] Reprendre le récapitulatif dans la note de calcul.

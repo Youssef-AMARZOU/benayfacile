@@ -33,7 +33,7 @@ def lignes(ws, tete=5):
 
 def test_feuilles_et_comptes(lot):
     wb = classeur(lot)
-    assert wb.sheetnames == ["Synthèse", "Poteaux", "Poutres", "Semelles", "Voiles"]
+    assert wb.sheetnames == ["Synthèse", "Poteaux", "Poutres", "Semelles", "Voiles", "Métré détaillé", "Récapitulatif métré"]
     assert [len(lignes(wb[n])[1]) for n in ("Poteaux", "Poutres", "Semelles", "Voiles")] == [45, 60, 9, 10]
     assert wb["Poteaux"]["A1"].value == PROJET["projet"]
     assert wb["Poteaux"].freeze_panes == "B6"
@@ -84,3 +84,45 @@ def test_endpoint_excel_et_telechargement(tmp_path, monkeypatch, lot):
     for nom in ("../secret.xlsx", "..\\secret.xlsx", "note.html", "absent.xlsx"):
         with pytest.raises(HTTPException):
             rs.excel_telecharger(nom)
+
+
+# ---------- métré béton et acier ----------
+def test_metre_cas_calcule_a_la_main(lot):
+    import metre as M
+    m = M.metre(lot)
+    p = next(l for l in m["lignes"] if l["famille"] == "poteaux" and l["nom"] == "P A1" and l["niveau"] == "RDC")
+    # poteau 40 × 40, h = 3,00 m : béton 0,40 × 0,40 × 3,00 = 0,480 m³
+    assert p["beton_m3"] == pytest.approx(0.48)
+    # 6 HA12, L = 3,00 + 50 × 0,012 = 3,60 m ; 6 × 3,60 × 0,888 = 19,18 kg
+    assert (p["principal_nb"], p["principal_d_mm"], p["principal_l_m"]) == (6, 12, pytest.approx(3.6))
+    assert p["principal_kg"] == pytest.approx(19.18, abs=0.01)
+    assert p["ratio_kg_m3"] == pytest.approx(p["acier_kg"] / 0.48, abs=0.1)
+    # voiles : 10 × 4,00 × 0,18 × 3,00 = 21,6 m³
+    assert next(f for f in m["familles"] if f["famille"] == "Voiles")["beton_m3"] == pytest.approx(21.6)
+    # le métré et les plans donnent le même acier
+    assert m["acier_total_kg"] == pytest.approx(m["poids_nomenclature_kg"], abs=0.5)
+    assert m["beton_total_m3"] == pytest.approx(sum(l["beton_m3"] for l in m["lignes"]), abs=1e-3)
+    # barres commerciales : arrondi supérieur de L / 12
+    for d in m["par_diametre"]:
+        assert d["barres"] == -(-d["longueur_m"] // 12)
+    assert sum(d["part_pct"] for d in m["par_diametre"]) == pytest.approx(100, abs=0.5)
+
+
+def test_metre_element_non_verifie_sans_acier(lot):
+    import metre as M
+    lot2 = {**lot, "poteaux": [dict(l) for l in lot["poteaux"]]}
+    lot2["poteaux"][0].update(statut="a_revoir")
+    m = M.metre(lot2)
+    p = m["lignes"][0]
+    assert p["beton_m3"] == pytest.approx(0.48) and p["acier_kg"] is None and p["type"] is None
+
+
+def test_feuilles_metre_dans_le_classeur(lot):
+    wb = classeur(lot)
+    assert wb.sheetnames[-2:] == ["Métré détaillé", "Récapitulatif métré"]
+    entetes, rangs = lignes(wb["Métré détaillé"])
+    assert "Béton\n(m³)" in entetes and "Ratio\n(kg/m³)" in entetes
+    assert len(rangs) == sum(len(lot[f]) for f in ("poteaux", "poutres", "semelles", "voiles"))
+    recap = [c.value for r in wb["Récapitulatif métré"].iter_rows() for c in r if c.value is not None]
+    assert "Barres de 12 m" in recap and "Ratio acier / béton armé" in recap
+    assert not any(isinstance(v, str) and "ALERTE" in v for v in recap)
