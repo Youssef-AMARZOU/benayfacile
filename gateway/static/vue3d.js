@@ -6,15 +6,24 @@
 
   const lettreFile = (j) => { let s = ''; j += 1; while (j) { const r = (j - 1) % 26; s = String.fromCharCode(65 + r) + s; j = Math.floor((j - 1) / 26); } return s; };
   const indiceFile = (l) => [...l].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
-  // de bas en haut : Fondation, S-2, S-1, RDC, R+1…, puis les libellés inconnus
-  const rangNiveau = (n) => {
-    n = String(n || '').trim();
-    if (/^fondation/i.test(n)) return -1000;
-    let m = n.match(/^s(?:ous-sol)?\s*-?\s*(\d+)$/i); if (m) return -(+m[1]);
-    if (/^rdc$/i.test(n)) return 0;
-    m = n.match(/^r\s*\+\s*(\d+)$/i); if (m) return +m[1];
-    return 10000;
+  // de bas en haut, mêmes règles que common.rang_niveau : Fondation ; S-2, SS1, Sous-sol 1, R-1 ; RDC ;
+  // R+1, N+1, Étage 1, 1er étage, Niveau 3 ; Mezzanine ; Terrasse… ; altitudes entre elles ; inconnus à la fin
+  const rangNiveau = (nom) => {
+    const n = String(nom || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/^(fondation|infrastructure|radier|longrine)/.test(n)) return -1e6;
+    let m = n.match(/^(?:s(?:ous[- ]?sol)?|ss|r|n|niv(?:eau)?\.?)\s*-\s*(\d+)$/) || n.match(/^(?:ss|sous[- ]?sol|s)\s*(\d+)$/);
+    if (m) return -(+m[1]);
+    if (/^(rdc|rez[- ]de[- ]chaussee|rdj|rez[- ]de[- ]jardin)(?![a-z])/.test(n) || /^[rn]\s*\+\s*0$/.test(n)) return 0;
+    m = n.match(/^(?:[rn]|niv(?:eau)?\.?|etage)\s*\+?\s*(\d+)$/) || n.match(/^(\d+)\s*(?:er|e|eme)?\s*etage$/);
+    if (m) return +m[1];
+    if (n.startsWith('mezzanine')) return 0.5;
+    if (/^(terrasse|toiture|buanderie|edicule|acrotere|cage)/.test(n)) return 9000;
+    m = n.match(/^(?:niv(?:eau)?\.?|z\s*=|altitude)?\s*([+-]?\d+(?:[.,]\d+)?)\s*m?$/);
+    if (m) return 1e5 + parseFloat(m[1].replace(',', '.'));
+    return 1e7;
   };
+  const FAMILLES = [['poteaux', 'Poteaux'], ['poutres', 'Poutres'], ['voiles', 'Voiles'], ['dalles', 'Dalles'],
+                    ['semelles', 'Semelles'], ['autres', 'Autres']];
   const ETATS = { verifie: 'Vérifié', a_revoir: 'À revoir', erreur: 'Erreur', incomplet: 'Incomplet' };
   const VUES = { iso: [-0.75, 0.55], face: [0, 0.02], cote: [-Math.PI / 2, 0.02], dessus: [0, Math.PI / 2 - 0.001] };
 
@@ -23,7 +32,7 @@
       <div class="v3d-barre" role="toolbar" aria-label="Vue 3D">
         <span class="v3d-groupe">${Object.entries({ iso: 'Iso', face: 'Face', cote: 'Côté', dessus: 'Dessus' })
           .map(([k, t]) => `<button type="button" class="btn ghost small" data-vue="${k}">${t}</button>`).join('')}</span>
-        <span class="v3d-groupe">${[['poteaux', 'Poteaux'], ['poutres', 'Poutres'], ['voiles', 'Voiles'], ['dalles', 'Dalles'], ['semelles', 'Semelles']]
+        <span class="v3d-groupe">${FAMILLES
           .map(([k, t]) => `<label class="v3d-case"><input type="checkbox" data-fam="${k}" checked> ${t}</label>`).join('')}</span>
         <label class="v3d-case">Jusqu'au niveau <select data-niv></select></label>
       </div>
@@ -33,10 +42,18 @@
     const bulle = conteneur.querySelector('.v3d-bulle'), legende = conteneur.querySelector('.v3d-legende');
     const selNiv = conteneur.querySelector('[data-niv]');
     const st = { prims: [], niveaux: [], yaw: VUES.iso[0], pitch: VUES.iso[1], zoom: 1, px: 0, py: 0,
-                 fam: { poteaux: true, poutres: true, voiles: true, dalles: true, semelles: true }, nivMax: null,
+                 fam: Object.fromEntries(FAMILLES.map(([k]) => [k, true])), nivMax: null, rang: {}, jetons: {},
                  etats: {}, centre: [0, 0, 0], rayon: 1, trame: { x: [], y: [] }, supposee: false, ecran: [] };
 
-    const jeton = (n, d) => (getComputedStyle(conteneur).getPropertyValue(n).trim() || d);
+    // jetons de couleur lus une fois par dessin (getComputedStyle par élément coûte cher sur un grand modèle)
+    let style = null;
+    const jeton = (n, d) => {
+      if (!(n in st.jetons)) st.jetons[n] = ((style || (style = getComputedStyle(conteneur))).getPropertyValue(n).trim() || d);
+      return st.jetons[n];
+    };
+    let attente = 0;
+    const demander = () => { if (!attente) attente = requestAnimationFrame(() => { attente = 0; dessiner(); }); };
+    const plusHaut = (a, b) => (st.rang[a] ?? rangNiveau(a)) > (st.rang[b] ?? rangNiveau(b));
 
     // ---------- géométrie ----------
     function charger(o) {
@@ -48,13 +65,18 @@
         return (i < tx.length && j < ty.length) ? [tx[i], ty[j]] : null;
       };
       // altitude des niveaux : z lu dans le modèle, sinon cumul des hauteurs d'étage
-      const noms = [...new Set([...(o.poteaux || []), ...(o.voiles || []), ...(o.poutres || []), ...(o.dalles || [])]
-        .map(e => e.niveau).filter(Boolean))].sort((a, b) => rangNiveau(a) - rangNiveau(b));
+      let noms = [...new Set([...(o.poteaux || []), ...(o.voiles || []), ...(o.poutres || []), ...(o.dalles || [])]
+        .map(e => e.niveau).filter(Boolean))];
       const zNiv = {}, hNiv = {};
       for (const p of [...(o.poteaux || []), ...(o.voiles || [])]) {
         if (p.z_m != null) zNiv[p.niveau] = Math.min(zNiv[p.niveau] ?? Infinity, p.z_m);
         if (p.hauteur_m) hNiv[p.niveau] = Math.max(hNiv[p.niveau] || 0, p.hauteur_m);
       }
+      // par altitude quand chaque étage en a une (noms Robot quelconques), sinon par libellé
+      const fond = (n) => /^fondation/i.test(n);
+      noms = noms.every(n => fond(n) || isFinite(zNiv[n] ?? NaN))
+        ? noms.sort((a, b) => (fond(a) ? -1e9 : zNiv[a]) - (fond(b) ? -1e9 : zNiv[b]))
+        : noms.sort((a, b) => rangNiveau(a) - rangNiveau(b));
       const connues = Object.values(hNiv);
       const hDefaut = connues.length ? connues.sort((a, b) => a - b)[connues.length >> 1] : 3.0;
       st.supposee = !connues.length;
@@ -64,6 +86,7 @@
         z = zNiv[n] + (hNiv[n] || hDefaut);
       }
       const hDe = (n) => hNiv[n] || hDefaut;
+      st.rang = Object.fromEntries(noms.map((n, i) => [n, fond(n) ? -1 : i]));
       const prims = [];
       for (const p of o.poteaux || []) {
         const xy = (p.x_m != null && p.y_m != null) ? [p.x_m, p.y_m] : xyAxe(p.axe); if (!xy) continue;
@@ -75,7 +98,7 @@
         if ([b.x1_m, b.y1_m, b.x2_m, b.y2_m].some(v => v == null)) continue;
         const zb = b.z_m ?? (/^fondation/i.test(b.niveau) ? 0 : (zNiv[b.niveau] ?? 0) + hDe(b.niveau));
         prims.push({ fam: 'poutres', id: b.id, nom: b.nom, niveau: b.niveau, info: b.b_cm ? `${b.b_cm}×${b.h_cm} cm` : '',
-                     pts: [[b.x1_m, b.y1_m, zb], [b.x2_m, b.y2_m, zb]], ep: (b.b_cm || 25) / 100 });
+                     pts: [[b.x1_m, b.y1_m, b.z1_m ?? zb], [b.x2_m, b.y2_m, b.z2_m ?? zb]], ep: (b.b_cm || 25) / 100 });
       }
       for (const v of o.voiles || []) {
         if ([v.x1_m, v.y1_m, v.x2_m, v.y2_m].some(c => c == null)) continue;
@@ -86,12 +109,19 @@
       for (const d of o.dalles || []) {
         if ([d.xmin_m, d.xmax_m, d.ymin_m, d.ymax_m].some(c => c == null)) continue;
         const zd = d.z_m ?? ((zNiv[d.niveau] ?? 0) + hDe(d.niveau));
+        const contour = Array.isArray(d.contour_m) && d.contour_m.length >= 3 ? d.contour_m.map(c => [c[0], c[1], zd])
+          : [[d.xmin_m, d.ymin_m, zd], [d.xmax_m, d.ymin_m, zd], [d.xmax_m, d.ymax_m, zd], [d.xmin_m, d.ymax_m, zd]];
         prims.push({ fam: 'dalles', id: d.id, nom: d.nom, niveau: d.niveau, info: d.type === 'balcon' ? 'balcon' : (d.h_cm ? `h = ${d.h_cm} cm` : 'dalle'),
-                     pts: [[d.xmin_m, d.ymin_m, zd], [d.xmax_m, d.ymin_m, zd], [d.xmax_m, d.ymax_m, zd], [d.xmin_m, d.ymax_m, zd]] });
+                     pts: contour });
       }
       for (const s of o.semelles || []) {
         const xy = (s.x_m != null && s.y_m != null) ? [s.x_m, s.y_m] : xyAxe(s.axe); if (!xy) continue;
         prims.push({ fam: 'semelles', id: s.id, nom: s.nom, niveau: 'Fondation', info: '', base: xy, z: s.z_m ?? 0, pts: [[xy[0], xy[1], s.z_m ?? 0]] });
+      }
+      // éléments que le calcul ne traite pas (barres et panneaux inclinés) : montrés pour que le modèle soit complet
+      for (const a of o.autres || []) {
+        if (!Array.isArray(a.pts) || a.pts.length < 2) continue;
+        prims.push({ fam: 'autres', id: a.id, nom: a.nom, niveau: '', info: `${a.genre || ''} — non calculé`, pts: a.pts, ep: 0.1 });
       }
       st.prims = prims;
       st.niveaux = noms;
@@ -124,9 +154,12 @@
     }
 
     function cadrer(reinit = true) {
-      const pts = st.prims.flatMap(p => p.pts);
-      if (!pts.length) { st.centre = [0, 0, 0]; st.rayon = 1; return; }
-      const mn = [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), mx = [0, 1, 2].map(k => Math.max(...pts.map(p => p[k])));
+      const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (const p of st.prims) for (const q of p.pts) for (let k = 0; k < 3; k++) {
+        if (q[k] < mn[k]) mn[k] = q[k];
+        if (q[k] > mx[k]) mx[k] = q[k];
+      }
+      if (!isFinite(mn[0])) { st.centre = [0, 0, 0]; st.rayon = 1; return; }
       st.centre = mn.map((v, k) => (v + mx[k]) / 2);
       st.rayon = Math.max(1, Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2);
       st.min = mn; st.max = mx;
@@ -147,6 +180,7 @@
       if (e === 'verifie') return jeton('--verifie', '#2f6b3a');
       if (e === 'a_revoir' || e === 'erreur') return jeton('--non-verifie', '#b3301d');
       if (e === 'incomplet') return jeton('--attention', '#7a4f00');
+      if (p.fam === 'autres') return jeton('--graphite-3', '#888');
       return jeton(`--v3d-${p.fam}`, '#3a8a8a');
     }
 
@@ -154,10 +188,11 @@
       if (!st.fam[p.fam]) return false;
       if (st.nivMax == null) return true;
       if (p.fam === 'semelles' || /^fondation/i.test(p.niveau)) return true;
-      return rangNiveau(p.niveau) <= rangNiveau(st.nivMax);
+      return !p.niveau || !plusHaut(p.niveau, st.nivMax);
     }
 
     function dessiner() {
+      st.jetons = {}; style = null;
       const dpr = window.devicePixelRatio || 1, W = conteneur.querySelector('.v3d-zone').clientWidth || 600, H = Math.max(320, Math.min(560, W * 0.62));
       if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
         cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
@@ -205,8 +240,15 @@
         const ex = 0.1 * st.rayon;
         const bulle_ = (pt, t) => { const q = proj(pt, W, H); ctx.strokeStyle = axes; ctx.fillStyle = jeton('--v3d-fond', '#fff');
           ctx.beginPath(); ctx.arc(q[0], q[1], 9, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = axes; ctx.fillText(t, q[0], q[1] + 0.5); };
-        tx.forEach((x, i) => bulle_([x, ty[0] - ex, z0], String(i + 1)));
-        ty.forEach((y, j) => bulle_([tx[0] - ex, y, z0], lettreFile(j)));
+        const pas = (vals, pt) => {          // un repère sur k si les bulles se chevauchent à l'écran
+          if (vals.length < 2) return 1;
+          const a = proj(pt(vals[0]), W, H), b = proj(pt(vals[vals.length - 1]), W, H);
+          const moyen = Math.hypot(b[0] - a[0], b[1] - a[1]) / (vals.length - 1);
+          return Math.max(1, Math.ceil(20 / Math.max(moyen, 1e-6)));
+        };
+        const kx = pas(tx, x => [x, ty[0] - ex, z0]), ky = pas(ty, y => [tx[0] - ex, y, z0]);
+        tx.forEach((x, i) => { if (i % kx === 0 || i === tx.length - 1) bulle_([x, ty[0] - ex, z0], String(i + 1)); });
+        ty.forEach((y, j) => { if (j % ky === 0 || j === ty.length - 1) bulle_([tx[0] - ex, y, z0], lettreFile(j)); });
       }
       if (st.min) {
         ctx.textAlign = 'right'; ctx.fillStyle = texte;
@@ -215,7 +257,7 @@
         const coin = coins.reduce((a, c) => proj([c[0], c[1], 0], W, H)[0] < proj([a[0], a[1], 0], W, H)[0] ? c : a);
         let dernierY = Infinity;
         for (const n of st.niveaux) {
-          if (/^fondation/i.test(n) || (st.nivMax != null && rangNiveau(n) > rangNiveau(st.nivMax))) continue;
+          if (/^fondation/i.test(n) || (st.nivMax != null && plusHaut(n, st.nivMax))) continue;
           const q = proj([coin[0], coin[1], st.zNiv[n] ?? 0], W, H);
           q[0] -= 14;
           if (Math.abs(q[1] - dernierY) < 12) continue;           // évite les libellés superposés
@@ -233,6 +275,7 @@
         ? [puce('--verifie', 'vérifié'), puce('--non-verifie', 'à revoir / erreur'), puce('--attention', 'incomplet')].join(' ')
         : [puce('--v3d-poteaux', 'poteaux'), puce('--v3d-poutres', 'poutres'), puce('--v3d-voiles', 'voiles'), puce('--v3d-dalles', 'dalles')].join(' '))
         + ` <span class="v3d-compte">${n('poteaux')} poteaux · ${n('poutres')} poutres · ${n('voiles')} voiles · ${n('dalles')} panneaux · ${st.niveaux.length} niveaux`
+        + (n('autres') ? ` · ${n('autres')} élément(s) incliné(s) non calculé(s), en gris` : '')
         + (st.supposee ? ' · hauteur d’étage non lue : 3,00 m supposés pour l’affichage' : '')
         + '</span><span class="v3d-aide">Glisser : tourner · Maj + glisser : déplacer · Molette : zoom · Double-clic : recentrer</span>';
     }
@@ -246,7 +289,7 @@
       if (glisse) {
         const dx = e.clientX - glisse.x, dy = e.clientY - glisse.y; glisse.x = e.clientX; glisse.y = e.clientY;
         if (glisse.pan) { st.px += dx; st.py += dy; } else { st.yaw -= dx * 0.008; st.pitch = Math.max(-0.05, Math.min(Math.PI / 2 - 0.001, st.pitch + dy * 0.008)); }
-        bulle.hidden = true; dessiner(); return;
+        bulle.hidden = true; demander(); return;
       }
       survol(e);
     });
@@ -256,7 +299,7 @@
       const r = cv.getBoundingClientRect(), f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
       const mx = e.clientX - r.left - r.width / 2 - st.px, my = e.clientY - r.top - r.height / 2 - st.py;
       st.zoom = Math.max(0.2, Math.min(40, st.zoom * f)); st.px -= mx * (f - 1); st.py -= my * (f - 1);
-      dessiner();
+      demander();
     }, { passive: false });
     cv.addEventListener('dblclick', () => { st.zoom = 1; st.px = 0; st.py = 0; dessiner(); });
     cv.addEventListener('keydown', (e) => {
@@ -295,7 +338,7 @@
       if (e.target.hasAttribute('data-niv')) st.nivMax = e.target.value || null;
       dessiner();
     });
-    if (window.ResizeObserver) new ResizeObserver(() => dessiner()).observe(conteneur);
+    if (window.ResizeObserver) new ResizeObserver(demander).observe(conteneur);
     // changement de thème clair / sombre : redessiner avec les nouveaux jetons
     if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', dessiner);
     new MutationObserver(dessiner).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style'] });

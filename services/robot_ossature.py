@@ -57,6 +57,85 @@ def indice_niveau(z: float, niveaux: Sequence[float], tol: float = TOL_Z) -> int
     return min(range(len(niveaux)), key=lambda i: abs(niveaux[i] - z))
 
 
+FRACTION_PLANCHER = 0.25   # paramètre de lecture du modèle (non normatif) : en deçà, altitude secondaire
+
+
+def niveaux_planchers(horizontaux: Sequence[Tuple[float, float]], z_pieds: Sequence[float],
+                      z_tetes: Sequence[float] = (), tol: float = TOL_Z) -> Tuple[List[float], List[float]]:
+    """(planchers, altitudes secondaires).
+
+    `horizontaux` = (altitude, longueur développée) des poutres et panneaux horizontaux. Un plancher porte
+    une part notable de la longueur horizontale du plus grand plancher ; une altitude qui en porte moins de
+    FRACTION_PLANCHER (palier d'escalier, poutre isolée de mezzanine, linteau) est secondaire : elle ne crée
+    pas d'étage, ses éléments vont au plancher immédiatement inférieur. Le pied le plus bas est toujours un
+    plancher. Sans aucun élément horizontal (portique seul), on prend pieds et têtes des éléments verticaux."""
+    if not horizontaux:
+        return niveaux_depuis_z(list(z_pieds) + list(z_tetes), tol), []
+    zs = niveaux_depuis_z([z for z, _ in horizontaux], tol)
+    poids = {z: 0.0 for z in zs}
+    for z, l in horizontaux:
+        zp = min(zs, key=lambda q: abs(q - z))
+        poids[zp] += l
+    pmax = max(poids.values()) or 1.0
+    planchers = [z for z in zs if poids[z] >= FRACTION_PLANCHER * pmax]
+    secondaires = [z for z in zs if z not in planchers]
+    if z_pieds:
+        planchers = niveaux_depuis_z(planchers + [min(z_pieds)], tol)
+    return planchers, secondaires
+
+
+def indice_niveau_sous(z: float, niveaux: Sequence[float], tol: float = TOL_Z) -> int:
+    """Indice du plancher sur lequel repose un élément dont le pied est à l'altitude z (le plus haut ≤ z)."""
+    i = 0
+    for k, zn in enumerate(niveaux):
+        if zn <= z + tol:
+            i = k
+    return i
+
+
+def noms_des_niveaux(niveaux: Sequence[float], etages: Sequence[Tuple[str, float]] = (),
+                     tol: float = 0.30) -> List[str]:
+    """Nom de l'étage qui part de chaque plancher (le dernier plancher, la toiture, n'en a pas).
+
+    Les étages définis dans Robot (nom, altitude du plancher bas) sont repris quand ils correspondent à un
+    plancher du modèle ; sinon RDC, R+1… comptés depuis le plancher le plus bas."""
+    noms = [nom_niveau(i) for i in range(len(niveaux))]
+    utilises = set()
+    for i, z in enumerate(niveaux):
+        proches = [(abs(ze - z), nom) for nom, ze in etages if abs(ze - z) <= tol and nom and nom not in utilises]
+        if proches:
+            nom = min(proches)[1].strip()
+            noms[i] = nom
+            utilises.add(nom)
+    return noms
+
+
+def trame_depuis(points_xy: Sequence[Tuple[float, float]], tol: float = 0.10) -> Tuple[List[float], List[float]]:
+    """Files de la trame : abscisses et ordonnées distinctes des poteaux et des extrémités de voiles."""
+    return (niveaux_depuis_z([p[0] for p in points_xy], tol), niveaux_depuis_z([p[1] for p in points_xy], tol))
+
+
+def classer_panneau(pts: Sequence[Tuple[float, float, float]]) -> str:
+    """'horizontal', 'vertical' ou 'incline' d'après la normale du contour (méthode de Newell),
+    indépendamment de la taille du panneau (une rampe longue n'est pas un voile)."""
+    nx = ny = nz = 0.0
+    for k in range(len(pts)):
+        x1, y1, z1 = pts[k]
+        x2, y2, z2 = pts[(k + 1) % len(pts)]
+        nx += (y1 - y2) * (z1 + z2)
+        ny += (z1 - z2) * (x1 + x2)
+        nz += (x1 - x2) * (y1 + y2)
+    n = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if n < 1e-9:
+        return "incline"
+    c = abs(nz) / n
+    if c >= VERTICALE:
+        return "horizontal"
+    if c <= HORIZONTALE:
+        return "vertical"
+    return "incline"
+
+
 def classer_barre(p1: Tuple[float, float, float], p2: Tuple[float, float, float]) -> Optional[str]:
     """'poteau', 'poutre' ou None (barre inclinée : ni l'un ni l'autre)."""
     dx, dy, dz = (p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2])
@@ -438,6 +517,32 @@ def _points_panneau(obj) -> List[Tuple[float, float, float]]:
     return []
 
 
+def etages_robot(struct) -> List[Tuple[str, float]]:
+    """Étages définis dans Robot (nom, altitude du plancher bas), s'ils existent ; liste vide sinon."""
+    out: List[Tuple[str, float]] = []
+    try:
+        mgr = struct.Storeys
+        for i in range(1, int(mgr.Count) + 1):
+            e = mgr.Get(i)
+            out.append((str(e.Name), float(e.Level)))
+    except Exception:
+        return []
+    return out
+
+
+def _perimetre(pts: Sequence[Tuple[float, float, float]]) -> float:
+    return sum(math.dist(pts[k], pts[(k + 1) % len(pts)]) for k in range(len(pts)))
+
+
+def _rectangulaire(pts: Sequence[Tuple[float, float, float]], tol: float = 0.02) -> bool:
+    """Contour rectangulaire aligné sur les axes : chaque sommet est sur un bord du rectangle englobant
+    et l'aire du polygone égale celle du rectangle."""
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    aire_rect = (max(xs) - min(xs)) * (max(ys) - min(ys))
+    aire = abs(sum(xs[k] * ys[(k + 1) % len(pts)] - xs[(k + 1) % len(pts)] * ys[k] for k in range(len(pts)))) / 2
+    return aire_rect > 0 and abs(aire - aire_rect) <= tol * aire_rect
+
+
 def _section_barre(barre, struct, type_section: int) -> Tuple[str, Optional[Tuple[float, float]]]:
     """Nom de la section et (b, h) en cm : depuis le nom, sinon depuis les données de la section."""
     nom = _label(barre, type_section)
@@ -489,9 +594,58 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
             erreurs.note("Nœuds", "nœud ?", e)
     if not noeuds:
         raise RuntimeError("le projet ne contient aucun nœud lisible")
-    niveaux = niveaux_depuis_z([p[2] for p in noeuds.values()])
-    trame_x = niveaux_depuis_z([p[0] for p in noeuds.values()], tol=0.10)
-    trame_y = niveaux_depuis_z([p[1] for p in noeuds.values()], tol=0.10)
+
+    # 1) géométrie seule : barres et panneaux classés, pour trouver les planchers et la trame
+    barres = []
+    inclinees = []
+    for barre in _iter_collection(struct.Bars.GetAll(), "IRobotBar"):
+        try:
+            num = int(barre.Number)
+            p1, p2 = noeuds[int(barre.StartNode)], noeuds[int(barre.EndNode)]
+        except Exception as e:
+            erreurs.note("Barres", "barre ?", e)
+            continue
+        genre = classer_barre(p1, p2)
+        if genre is None:
+            inclinees.append((num, p1, p2))
+            continue
+        barres.append((barre, num, p1, p2, genre))
+    panneaux = []
+    try:
+        for obj in _iter_collection(struct.Objects.GetAll(), "IRobotObjObject"):
+            pts = _points_panneau(obj)
+            if len(pts) >= 3:
+                panneaux.append((obj, pts, classer_panneau(pts)))
+    except Exception as e:
+        remarques.append(f"Panneaux : lecture impossible ({e}).")
+
+    z_horiz = [((p1[2] + p2[2]) / 2, math.dist(p1, p2)) for _, _, p1, p2, g in barres if g == "poutre"] \
+        + [(sum(p[2] for p in pts) / len(pts), _perimetre(pts) / 2) for _, pts, sorte in panneaux if sorte == "horizontal"]
+    z_pieds = [min(p1[2], p2[2]) for _, _, p1, p2, g in barres if g == "poteau"] \
+        + [min(p[2] for p in pts) for _, pts, sorte in panneaux if sorte == "vertical"]
+    z_tetes = [max(p1[2], p2[2]) for _, _, p1, p2, g in barres if g == "poteau"]
+    niveaux, secondaires = niveaux_planchers(z_horiz, z_pieds, z_tetes)
+    niveaux = niveaux or niveaux_depuis_z([p[2] for p in noeuds.values()])
+    if secondaires:
+        remarques.append(f"{len(secondaires)} altitude(s) secondaire(s) (palier, poutre isolée…) rattachée(s) au plancher "
+                         f"inférieur, par exemple z = {secondaires[0]:.2f} m : pas d'étage créé pour elles.")
+    etages = etages_robot(struct)
+    noms = noms_des_niveaux(niveaux, etages)
+    if etages:
+        repris = sum(1 for n in noms if n in {e[0] for e in etages})
+        remarques.append(f"Niveaux : {repris} nom(s) repris des étages définis dans Robot, "
+                         f"{len(noms) - repris} nommé(s) depuis le plancher le plus bas (RDC, R+1…).")
+
+    def nom_etage(i: int) -> str:
+        return noms[i] if 0 <= i < len(noms) else nom_niveau(i)
+
+    def nom_plancher(i: int) -> str:
+        return "Fondation" if i <= 0 else nom_etage(i - 1)
+
+    xy_verticaux = [(min(p1, p2, key=lambda q: q[2])[0], min(p1, p2, key=lambda q: q[2])[1])
+                    for _, _, p1, p2, g in barres if g == "poteau"] \
+        + [(p[0], p[1]) for _, pts, sorte in panneaux if sorte == "vertical" for p in pts]
+    trame_x, trame_y = trame_depuis(xy_verticaux or [(p[0], p[1]) for p in noeuds.values()])
 
     efforts = resultats.Bars.Forces
     reactions = resultats.Nodes.Reactions
@@ -507,21 +661,15 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
         return {"n": fx / 1e3, "v": fz / 1e3, "my": my / 1e3, "mz": mz / 1e3}   # N → kN
 
     poteaux, poutres, pieds = [], [], {}
-    inclinees = []
-    for barre in _iter_collection(struct.Bars.GetAll(), "IRobotBar"):
-        try:
-            num = int(barre.Number)
-            p1, p2 = noeuds[int(barre.StartNode)], noeuds[int(barre.EndNode)]
-        except Exception as e:
-            erreurs.note("Barres", "barre ?", e)
-            continue
-        genre = classer_barre(p1, p2)
-        if genre is None:
-            inclinees.append(num)
-            continue
+    # semelle sous un poteau dont le pied ne repose ni sur la tête d'un autre poteau ni sur un plancher porté
+    # (poteau naissant) : fondations à plusieurs altitudes et terrain en pente compris
+    tetes = {(round(max(p1, p2, key=lambda q: q[2])[0], 2), round(max(p1, p2, key=lambda q: q[2])[1], 2),
+              round(max(p1[2], p2[2]), 2)) for _, _, p1, p2, g in barres if g == "poteau"}
+    z_poutres = niveaux_depuis_z([(p1[2] + p2[2]) / 2 for _, _, p1, p2, g in barres if g == "poutre"])
+    for barre, num, p1, p2, genre in barres:
         section_nom, dims = _section_barre(barre, struct, t_section)
         bas = p1 if p1[2] <= p2[2] else p2
-        niv = indice_niveau(bas[2], niveaux)
+        niv = indice_niveau_sous(bas[2] if genre == "poteau" else (p1[2] + p2[2]) / 2, niveaux)
         longueur = math.dist(p1, p2)
         try:
             u, s = efforts_barre(num, comb_elu), efforts_barre(num, comb_els)
@@ -530,7 +678,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
             erreurs.note("Efforts des barres", f"barre {num}", e)
         if genre == "poteau":
             axe = libelle_axe(bas[0], bas[1], trame_x, trame_y)
-            el = {"id": f"P{num}", "nom": f"P {axe}", "niveau": nom_niveau(niv), "axe": axe,
+            el = {"id": f"P{num}", "nom": f"P {axe}", "niveau": nom_etage(niv), "axe": axe,
                   "x_m": round(bas[0], 3), "y_m": round(bas[1], 3), "z_m": round(bas[2], 3),
                   "a_cm": dims[0] if dims else None, "b_cm": dims[1] if dims else None,
                   "hauteur_m": round(longueur, 2), "lf_m": round(COEF_LF * longueur, 2),
@@ -538,19 +686,24 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                   "mx_knm": round(u["my"], 1) if u else 0.0, "my_knm": round(u["mz"], 1) if u else 0.0,
                   "section_robot": section_nom}
             poteaux.append(el)
-            if niv == 0:
+            sur_tete = (round(bas[0], 2), round(bas[1], 2), round(bas[2], 2)) in tetes
+            sur_poutre = any(abs(bas[2] - z) <= TOL_Z for z in z_poutres) and niv > 0
+            if not sur_tete and not sur_poutre:
                 pieds[num] = (bas, el)
         else:
-            el = {"id": f"B{num}", "nom": f"Pt {num}", "niveau": niveau_plancher(niv),
+            el = {"id": f"B{num}", "nom": f"Pt {num}", "niveau": nom_plancher(niv),
                   "x1_m": round(p1[0], 3), "y1_m": round(p1[1], 3), "x2_m": round(p2[0], 3), "y2_m": round(p2[1], 3),
-                  "z_m": round((p1[2] + p2[2]) / 2, 3),
+                  "z_m": round((p1[2] + p2[2]) / 2, 3), "z1_m": round(p1[2], 3), "z2_m": round(p2[2], 3),
                   "b_cm": dims[0] if dims else None, "h_cm": dims[1] if dims else None,
                   "portee_m": round(longueur, 2),
                   "mu_knm": round(u["my"], 1) if u else None, "ms_knm": round(s["my"], 1) if s else None,
                   "vu_kn": round(u["v"], 1) if u else None, "section_robot": section_nom}
             poutres.append(el)
+    autres = [{"id": f"I{num}", "nom": f"Barre {num}", "genre": "barre inclinée",
+               "pts": [[round(c, 3) for c in p1], [round(c, 3) for c in p2]]} for num, p1, p2 in inclinees]
     if inclinees:
-        remarques.append(f"{len(inclinees)} barre(s) inclinée(s) non traitée(s), par exemple la barre {inclinees[0]}.")
+        remarques.append(f"{len(inclinees)} barre(s) inclinée(s) non calculée(s) (contreventement, rampant…), "
+                         f"par exemple la barre {inclinees[0][0]} : affichées dans la vue 3D, à justifier à part.")
 
     # semelles : réactions aux nœuds d'appui en pied des poteaux du niveau bas
     semelles = []
@@ -577,21 +730,26 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
 
     # voiles : panneaux verticaux ; géométrie lue, efforts réduits à saisir (non exposés simplement par l'API)
     # dalles et balcons : panneaux horizontaux ; géométrie et épaisseur lues, charges g et q à saisir
-    voiles, dalles = [], []
+    voiles, dalles, non_rect = [], [], []
     pieds_xy = [(bas[0], bas[1]) for bas, _ in pieds.values()] or [(x, y) for x, y, _ in noeuds.values()]
     emprise = (min(p[0] for p in pieds_xy), max(p[0] for p in pieds_xy),
                min(p[1] for p in pieds_xy), max(p[1] for p in pieds_xy)) if pieds_xy else None
     try:
-        for obj in _iter_collection(struct.Objects.GetAll(), "IRobotObjObject"):
-            pts = _points_panneau(obj)
-            if len(pts) < 3:
-                continue
+        for obj, pts, sorte in panneaux:
             zs = [p[2] for p in pts]
-            if max(zs) - min(zs) < 0.5:          # panneau horizontal : dalle ou balcon
+            if sorte == "incline":
+                autres.append({"id": f"O{obj.Number}", "nom": f"Panneau {obj.Number}", "genre": "panneau incliné",
+                               "pts": [[round(c, 3) for c in p] for p in pts]})
+                continue
+            if sorte == "horizontal":            # dalle ou balcon
                 c = classer_dalle(pts, emprise)
                 prefixe = "B" if c["type"] == "balcon" else "D"
+                rect = _rectangulaire(pts)
+                if not rect:
+                    non_rect.append(obj.Number)
                 dalles.append({"id": f"{prefixe}{obj.Number}", "nom": f"{prefixe} {obj.Number}",
-                               "niveau": niveau_plancher(indice_niveau(min(zs), niveaux)),
+                               "niveau": nom_plancher(indice_niveau_sous(sum(zs) / len(zs), niveaux)),
+                               "contour_m": [[round(p[0], 3), round(p[1], 3)] for p in pts], "rectangulaire": rect,
                                "xmin_m": round(min(p[0] for p in pts), 3), "xmax_m": round(max(p[0] for p in pts), 3),
                                "ymin_m": round(min(p[1] for p in pts), 3), "ymax_m": round(max(p[1] for p in pts), 3),
                                "z_m": round(min(zs), 3),
@@ -600,7 +758,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                 continue
             horiz, (a1, a2) = max(((math.dist(a[:2], b[:2]), (a, b)) for a in pts for b in pts), key=lambda t: t[0])
             voiles.append({"id": f"V{obj.Number}", "nom": f"V {obj.Number}",
-                           "niveau": nom_niveau(indice_niveau(min(zs), niveaux)),
+                           "niveau": nom_etage(indice_niveau_sous(min(zs), niveaux)),
                            "x1_m": round(a1[0], 3), "y1_m": round(a1[1], 3), "x2_m": round(a2[0], 3), "y2_m": round(a2[1], 3),
                            "z_m": round(min(zs), 3),
                            "longueur_m": round(horiz, 2), "hauteur_m": round(max(zs) - min(zs), 2),
@@ -608,6 +766,9 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                            "n_kn": None, "m_knm": None, "v_kn": None})
         if voiles:
             remarques.append("Voiles : géométrie lue dans Robot ; saisissez N, M, V (résultats réduits) avant calcul.")
+        if non_rect:
+            remarques.append(f"{len(non_rect)} panneau(x) de dalle non rectangulaire(s), par exemple le panneau "
+                             f"{non_rect[0]} : lx et ly sont ceux du rectangle englobant, à confirmer.")
         nb_b = sum(1 for d in dalles if d["type"] == "balcon")
         if dalles:
             remarques.append(f"Dalles : {len(dalles) - nb_b} panneau(x) de plancher et {nb_b} balcon(s) en porte-à-faux repérés "
@@ -626,7 +787,8 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
         remarques.append("Aucun poteau, poutre ni voile reconnu dans ce modèle.")
 
     oss = {"poteaux": poteaux, "poutres": poutres, "semelles": semelles, "voiles": voiles, "dalles": dalles,
-           "niveaux": [nom_niveau(i) for i in range(max(len(niveaux) - 1, 1))],
+           "niveaux": [nom_etage(i) for i in range(max(len(niveaux) - 1, 1))],
+           "altitudes_m": [round(z, 3) for z in niveaux], "autres": autres,
            "trame_x_m": trame_x, "trame_y_m": trame_y,
            "source": "robot", "cas_elu": comb_elu[0][0] if comb_elu and len(comb_elu) == 1 else None,
            "cas_els": comb_els[0][0] if comb_els and len(comb_els) == 1 else None,

@@ -219,3 +219,13 @@ def test_aciers_poutre_constructibles(as_requis):
 def test_poutre_ne_retient_jamais_une_seule_barre():
     r = e.poutre(e.PoutreInput(b_cm=25, h_cm=50, mu_knm=93.2, vu_kn=60))
     assert r["ferraillage"]["n"] >= 2 and r["ferraillage"]["diametre_mm"] <= 25
+
+
+def test_axe_neutre_els_racine_exacte_calculee_a_la_main():
+    """b = 25 cm, d = 0,45 m, As = 9,42 cm², n = 15 : 0,125 y² + 0,01413 y − 0,0063585 = 0
+    → Δ = 0,01413² + 4 × 0,125 × 0,0063585 = 0,0033789 ; y = (−0,01413 + 0,058128) / 0,25 = 0,17599 m."""
+    import engine_service as eng
+    assert eng._resolve_y(25, 0.45, 9.42) == pytest.approx(0.17599, abs=1e-5)
+    y = eng._resolve_y(30, 0.55, 15.7, 3.08)        # avec aciers comprimés : le moment statique s'annule
+    b, As, Asc = 0.30, 15.7e-4, 3.08e-4
+    assert b * y * y / 2 + 15 * Asc * (y - 0.045) - 15 * As * (0.55 - y) == pytest.approx(0, abs=1e-12)

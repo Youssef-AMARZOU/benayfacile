@@ -88,19 +88,45 @@ def indice_file(lettres: str) -> int:
     return n - 1
 
 
+_RE_NIV = None
+
+
 def rang_niveau(nom: str) -> tuple:
-    """Clé de tri des niveaux de bas en haut : Fondation, sous-sols (S-2, S-1), RDC, R+1, R+2…
+    """Clé de tri des niveaux de bas en haut, quel que soit le libellé employé par le bureau ou par Robot :
+    Fondation / Infrastructure / Radier ; sous-sols (S-2, SS1, Sous-sol 1, R-1, N-1) ; RDC / Rez-de-chaussée / R+0 ;
+    étages (R+1, N+1, Étage 1, 1er étage, Niveau 3) ; Mezzanine ; Terrasse / Toiture / Buanderie / Édicule en tête ;
+    des libellés d'altitude (« +6,12 », « Niv. +6.12 m », « Z = 6.12 ») se classent entre eux par altitude,
+    après les libellés d'étage (aucune hauteur d'étage n'est supposée pour les mêler).
     Un libellé inconnu se place après, dans son ordre d'apparition (tri stable)."""
     import re as _re
-    n = (nom or "").strip()
-    if n.lower().startswith("fondation"):
-        return (0, -1000)
-    m = _re.match(r"(?i)s(?:ous-sol)?\s*-?\s*(\d+)$", n)
+    n = (nom or "").strip().lower()
+    n = n.replace("é", "e").replace("è", "e").replace("ê", "e")
+    if _re.match(r"(fondation|infrastructure|radier|longrine)", n):
+        return (0, -1000.0)
+    m = _re.match(r"(?:s(?:ous[- ]?sol)?|ss|sous-sol|r|n|niv(?:eau)?\.?)\s*-\s*(\d+)$", n) \
+        or _re.match(r"(?:ss|sous[- ]?sol|s)\s*(\d+)$", n)
     if m:
-        return (0, -int(m.group(1)))
-    if n.upper() == "RDC":
-        return (0, 0)
-    m = _re.match(r"(?i)r\s*\+\s*(\d+)$", n)
+        return (0, -float(m.group(1)))
+    if _re.match(r"(rdc|rez[- ]de[- ]chaussee|rdj|rez[- ]de[- ]jardin)(?![a-z])", n) or _re.match(r"[rn]\s*\+\s*0$", n):
+        return (0, 0.0)
+    m = _re.match(r"(?:[rn]|niv(?:eau)?\.?|etage)\s*\+?\s*(\d+)$", n) or _re.match(r"(\d+)\s*(?:er|e|eme|ème)?\s*etage$", n)
     if m:
-        return (0, int(m.group(1)))
-    return (1, 0)
+        return (0, float(m.group(1)))
+    if n.startswith("mezzanine"):
+        return (0, 0.5)
+    if _re.match(r"(terrasse|toiture|buanderie|edicule|acrotere|cage)", n):
+        return (0, 9000.0)
+    m = _re.match(r"(?:niv(?:eau)?\.?|z\s*=|altitude)?\s*([+-]?\d+(?:[.,]\d+)?)\s*m?$", n)
+    if m:
+        return (1, float(m.group(1).replace(",", ".")))
+    return (2, 0.0)
+
+
+def trier_niveaux(noms, z_par_niveau=None) -> list:
+    """Niveaux de bas en haut. Quand l'altitude de chaque niveau est connue (modèle Robot), elle décide ;
+    sinon le libellé (rang_niveau). « Fondation » reste en bas dans tous les cas."""
+    noms = list(dict.fromkeys(n for n in noms if n))
+    z = z_par_niveau or {}
+    if noms and all(z.get(n) is not None for n in noms if not rang_niveau(n) == (0, -1000.0)):
+        return sorted(noms, key=lambda n: (-1e9 if rang_niveau(n) == (0, -1000.0) else z[n]))
+    return sorted(noms, key=rang_niveau)

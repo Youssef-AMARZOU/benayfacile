@@ -742,6 +742,7 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
 <ul class="items-list" id="synthesis-items"></ul>
 <div class="actions-col">
   <button class="btn gold" id="sy-note">Générer la note de calcul</button>
+  <button class="btn" id="sy-note-docx">Exporter la note en Word (.docx)</button>
   <button class="btn" id="sy-note-save">Sauvegarder la note (serveur /output)</button>
   <button class="btn" id="sy-dxf">Générer le dossier de plans DXF</button>
 </div>
@@ -767,6 +768,20 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
           ouvrirApercuNote(html);
           log('Note de calcul affichée. Bouton « Imprimer / PDF » pour l\'enregistrer en PDF.');
         } catch (e) { log('Erreur : ' + e.message); }
+      });
+      $('sy-note-docx').addEventListener('click', async () => {
+        const el = $('sy-log');
+        el.innerHTML = '<span class="spinner"></span>Création du document Word…';
+        try {
+          const r = await api('/api/report/note/docx', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(synthesisPayload()) });
+          const url = '/api/report/note/docx/' + encodeURIComponent(r.fichier);
+          el.innerHTML = `<p>Note Word enregistrée dans <code>${esc(r.dossier)}</code> : même contenu que la note `
+            + `affichée (${r.titres} titres, ${r.tableaux} tableaux, ${r.equations} équations).</p>`
+            + (r.equations_natives ? '' : `<p class="warn">Microsoft Office n'a pas été trouvé sur ce poste : `
+              + `${r.equations - r.equations_converties} équation(s) sont écrites en texte linéaire, pas en équations Word.</p>`)
+            + `<a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+        } catch (e) { afficherErreur(el, e, {}, 'Export Word impossible. '); }
       });
       $('sy-note-save').addEventListener('click', async () => {
         log('Sauvegarde…');

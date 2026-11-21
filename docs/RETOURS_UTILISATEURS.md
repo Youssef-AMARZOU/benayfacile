@@ -126,11 +126,13 @@ Options ajoutées pour coller aux usages montrés dans la vidéo R2 :
 ### Limites connues, à traiter
 
 - [ ] Plan de fondation : pas encore découpé pour un bâtiment long (même méthode que les plans de coffrage à appliquer).
-- [ ] Noms de niveaux : déduits des altitudes (le premier niveau au-dessus du plus bas s'appelle RDC). Un modèle avec
-      sous-sol ou mezzanine, comme celui de la vidéo (« PH SOUS-SOL », « PLB MEZ »), doit reprendre les **noms d'étages
-      définis dans Robot** ; à faire et à tester sur un vrai fichier, Robot n'étant pas installé sur le poste de développement.
-- [ ] Panneaux non rectangulaires (dalle en L, voile avec ouverture) : dessinés par leur rectangle englobant ou leur
-      plus grande longueur.
+- [x] Noms de niveaux : les **étages définis dans Robot** sont repris quand ils tombent sur un plancher du modèle ;
+      sinon RDC, R+1… depuis le plancher le plus bas. *Lecture de `Structure.Storeys` (Name, Level) écrite d'après l'API
+      RobotOM, à confirmer sur un vrai fichier.*
+- [x] Panneaux non rectangulaires (dalle en L) : contour réel dans la vue 3D et sur le plan de coffrage ; le calcul de la
+      dalle reste fait sur le rectangle englobant, et c'est signalé dans les remarques de lecture.
+- [ ] Voile avec ouverture : encore réduit à sa plus grande longueur.
+- [ ] Semelles filantes sous voiles : pas encore déduites du modèle.
 
 ### À vérifier chez le testeur (modèle réel, Robot installé)
 
@@ -155,3 +157,20 @@ Options ajoutées pour coller aux usages montrés dans la vidéo R2 :
 - [x] Sans bibliothèque ni réseau (canvas du navigateur) ; thème clair et sombre.
 - [x] Altitude de chaque élément lue dans Robot ; à défaut, cumul des hauteurs d'étage (signalé si supposé).
 - [ ] À vérifier sur le modèle réel : lisibilité au-delà de 2 000 éléments, panneaux non rectangulaires.
+
+## Audit de généralisation et de passage à l'échelle (21/11/2026)
+
+Demande : « généralisation, scalabilité et adaptabilité dans toute l'app, 3D comprise ». Un faux modèle Robot reprend
+des situations que l'exemple R+4 n'a pas (`tests/test_robot_generalisation.py`). Ce qui supposait un modèle « propre » :
+
+| Où | Problème trouvé | Correction |
+|---|---|---|
+| Lecture Robot : niveaux | chaque altitude de nœud créait un étage (nœud à mi-hauteur, palier, acrotère) | étages = altitudes des planchers (poutres et panneaux horizontaux, pondérés par leur longueur) ; une altitude portant moins de 25 % du plus grand plancher est « secondaire » et rattachée au plancher inférieur (signalé) |
+| Lecture Robot : files | chaque abscisse de nœud créait une file (bout de palier, nœud intermédiaire) | files tirées des poteaux et voiles seulement |
+| Lecture Robot : semelles | seulement sous les poteaux du niveau le plus bas | sous tout poteau qui ne repose ni sur un autre poteau ni sur un plancher : fondations à plusieurs altitudes, terrain en pente |
+| Lecture Robot : panneaux | un panneau de plus de 50 cm de dénivelé devenait un voile (toiture en pente, rampe) | classement par la normale du panneau : horizontal, vertical ou incliné ; les inclinés ne sont pas calculés, ils sont montrés et signalés |
+| Lecture Robot : noms | toujours RDC, R+1… | noms des étages Robot repris quand ils existent |
+| Libellés de niveaux (Excel, Robot) | seuls Fondation, S-n, RDC, R+n étaient rangés ; « Étage 1 », « SS1 », « N+2 », « Terrasse »… tombaient au hasard | libellés usuels reconnus ; par altitude dès que le modèle la donne (plans et 3D) |
+| Vue 3D | style relu pour chaque élément à chaque image ; cadrage qui dépasse la pile au-delà de ~100 000 points ; dalles en rectangle ; barres inclinées absentes | jetons lus une fois par image, un dessin par image, cadrage en boucle ; contour réel ; « Autres » en gris ; repères de files espacés quand la trame est dense. Mesuré : 34 800 éléments, 0,1 s par image |
+| Moteur | l'axe neutre ELS balayait 2 000 points (90 % du temps de calcul en lot) | racine exacte du trinôme (mêmes résultats, test calculé à la main) : calcul en lot de 1 424 éléments en 0,6 s au lieu de 7,8 s |
+| Note de calcul | pas d'export Word | export .docx tiré de la même note que l'aperçu, équations Word natives |

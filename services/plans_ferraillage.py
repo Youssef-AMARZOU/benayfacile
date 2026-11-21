@@ -37,7 +37,7 @@ import ezdxf
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.units import MM
 
-from common import indice_file, lettre_file, rang_niveau
+from common import indice_file, lettre_file, rang_niveau, trier_niveaux  # noqa: F401
 
 # ───────────────────────── aciers ─────────────────────────
 
@@ -729,15 +729,22 @@ def elements_niveau(lot: dict, dalles: Sequence[dict], trame_x, trame_y,
     Les éléments non vérifiés sont dessinés (la géométrie est connue) mais repérés par leur nom suivi de « * ».
     """
     ordre: List[str] = []
+    z_niv: Dict[str, float] = {}
+
+    def vu(n, z):
+        if n and n not in ordre:
+            ordre.append(n)
+        if n and z is not None:
+            z_niv[n] = min(z_niv.get(n, float("inf")), float(z))
+
     for fam in ("poteaux", "voiles", "poutres"):
         for l in lot.get(fam) or []:
-            n = l.get("niveau") or (l.get("entree") or {}).get("niveau")
-            if n and n not in ordre:
-                ordre.append(n)
+            e = l.get("entree") or {}
+            vu(l.get("niveau") or e.get("niveau"), e.get("z_m") if fam != "poutres" else None)
     for d in dalles:
-        if d.get("niveau") and d["niveau"] not in ordre:
-            ordre.append(d["niveau"])
-    ordre.sort(key=rang_niveau)                      # de bas en haut, quel que soit l'ordre des barres dans Robot
+        vu(d.get("niveau"), None)
+    # de bas en haut : par altitude quand le modèle la donne (libellés Robot quelconques), sinon par libellé
+    ordre = trier_niveaux(ordre, z_niv)
     par_niveau: "OrderedDict[str, List[dict]]" = OrderedDict((n, []) for n in ordre)
     sans_position: List[dict] = []
 
@@ -767,6 +774,7 @@ def elements_niveau(lot: dict, dalles: Sequence[dict], trame_x, trame_y,
             sans_position.append({"famille": "dalles", "nom": d.get("nom"), "niveau": d.get("niveau"), "statut": "position inconnue"})
             continue
         par_niveau[d["niveau"]].append({"genre": d.get("type") or "dalle", "box": (d["xmin_m"], d["ymin_m"], d["xmax_m"], d["ymax_m"]),
+                                        "contour": d.get("contour_m"), "rectangulaire": d.get("rectangulaire", True),
                                         "h": d.get("h_cm"), "code": d.get("nom") or "D", "verifie": True})
     return par_niveau, sans_position
 
@@ -940,8 +948,12 @@ def planche_coffrage(D: Dessin, niveaux: List[str], els: List[dict], trame_x: Se
     for el in els:                       # panneaux d'abord, sous le reste
         if "box" in el:
             (a1, b1), (a2, b2) = pt(el["box"][0], el["box"][1]), pt(el["box"][2], el["box"][3])
-            D.rect(a1, b1, a2 - a1, b2 - b1, "BETON_PROPRETE", 18)
-            D.ligne((a1, b1), (a2, b2), "BETON_PROPRETE", 13)
+            if el.get("contour") and not el.get("rectangulaire", True):     # panneau en L, trapèze… : son vrai contour
+                D.msp.add_lwpolyline([pt(x, y) for x, y in el["contour"]], close=True,
+                                     dxfattribs={"layer": "BETON_PROPRETE", "lineweight": 18})
+            else:
+                D.rect(a1, b1, a2 - a1, b2 - b1, "BETON_PROPRETE", 18)
+                D.ligne((a1, b1), (a2, b2), "BETON_PROPRETE", 13)
             nature = "balcon" if el["genre"] == "balcon" else "dalle"
             D.texte(f"{el['code']} — {nature}" + (f" h = {el['h']:g} cm" if el.get("h") else ""),
                     (a1 + a2) / 2, (b1 + b2) / 2 + 3, 2.6, MC, "TEXTE")

@@ -5,7 +5,7 @@
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hidden = (
-    ["robot_service", "robot_ossature", "excel_report", "plans_ferraillage", "import_excel", "complements", "dalles", "planchers", "metre", "note_calcul", "tex_mathml", "engine_service", "dxf_service", "report_service", "common", "app"]
+    ["robot_service", "robot_ossature", "excel_report", "plans_ferraillage", "import_excel", "complements", "dalles", "planchers", "metre", "note_calcul", "note_docx", "tex_mathml", "engine_service", "dxf_service", "report_service", "common", "app"]
     + collect_submodules("uvicorn")
     + collect_submodules("webview")                                   # fenêtre native (pywebview)
     + ["win32com", "win32com.client", "pythoncom", "pywintypes"]      # pilotage Robot (si pywin32 installé)
@@ -19,7 +19,7 @@ a = Analysis(
         ("referentiels", "referentiels"),      # bael.json, rps.json, bureau.json par défaut
         ("examples", "examples"),
         ("services/polices", "polices"),     # Latin Modern de la note de calcul (licence GUST)
-    ] + collect_data_files("ezdxf") + collect_data_files("webview"),
+    ] + collect_data_files("ezdxf") + collect_data_files("webview") + collect_data_files("docx"),
     hiddenimports=hidden,
     excludes=["tkinter", "matplotlib", "pytest", "IPython"],
     noarchive=False,
