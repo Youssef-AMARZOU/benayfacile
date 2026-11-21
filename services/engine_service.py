@@ -97,37 +97,19 @@ def _resolve_y(b_cm: float, d_m: float, as_cm2: float, asc_cm2: float = 0.0,
     As = as_cm2 / 1e4
     Asc = asc_cm2 / 1e4
 
-    def eq(y):
-        # moment statique de la section homogénéisée par rapport à l'axe neutre = 0 :
-        # béton comprimé + aciers comprimés − aciers tendus (n = 15)
-        return bc * y**2 / 2 + n * Asc * (y - dprime_m) - n * As * (d_m - y)
-    lo, hi = 1e-6, d_m
-    flo, fhi = eq(lo), eq(hi)
-    tries = 0
-    while flo * fhi > 0 and tries < 40:
-        hi *= 1.5
-        fhi = eq(hi)
-        tries += 1
-    if flo * fhi > 0:
+    # moment statique de la section homogénéisée par rapport à l'axe neutre = 0 :
+    #   b·y²/2 + n·Asc·(y − d') − n·As·(d − y) = 0
+    # trinôme en y ; racine positive exacte (au lieu d'un balayage numérique : même résultat, ~1000 × plus rapide)
+    a = bc / 2.0
+    b = n * (Asc + As)
+    c = -n * (Asc * dprime_m + As * d_m)
+    if a <= 0:
         return float("nan")
-    import numpy as np
-    xs = np.linspace(lo, hi, 2000)
-    vals = [eq(x) for x in xs]
-    for i in range(len(xs) - 1):
-        if vals[i] == 0:
-            return xs[i]
-        if vals[i] * vals[i + 1] < 0:
-            x0, x1 = xs[i], xs[i + 1]
-            f0 = vals[i]
-            for _ in range(60):
-                xm = 0.5 * (x0 + x1)
-                fm = eq(xm)
-                if f0 * fm <= 0:
-                    x1 = xm
-                else:
-                    x0, f0 = xm, fm
-            return 0.5 * (x0 + x1)
-    return float("nan")
+    disc = b * b - 4.0 * a * c
+    if disc < 0:
+        return float("nan")
+    y = (-b + math.sqrt(disc)) / (2.0 * a)
+    return y if y > 0 else float("nan")
 
 
 def flex_els(b_cm: float, d_m: float, as_cm2: float, fc28: float, fe: float,
@@ -935,6 +917,21 @@ def dalle(inp: dalles.DalleInput):
 def balcon(inp: dalles.BalconInput):
     try:
         return dalles.balcon(inp)
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err))
+
+
+
+# --------------------------------------------------------------------------- #
+# Planchers à corps creux (BAEL B.6.2, B.6.8,42) — voir planchers.py           #
+# --------------------------------------------------------------------------- #
+import planchers  # noqa: E402
+
+
+@app.post("/plancher")
+def plancher(inp: planchers.PlancherInput):
+    try:
+        return planchers.plancher(inp)
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err))
 

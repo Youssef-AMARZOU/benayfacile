@@ -24,7 +24,7 @@ GRECS = {
 }
 OPERATEURS = {
     "le": "≤", "leq": "≤", "ge": "≥", "geq": "≥", "pm": "±", "times": "×", "cdot": "·", "approx": "≈",
-    "Rightarrow": "⇒", "to": "→", "neq": "≠", "infty": "∞",
+    "Rightarrow": "⇒", "to": "→", "neq": "≠", "infty": "∞", "perp": "⊥",
 }
 FONCTIONS = {"lim", "min", "max", "sin", "cos", "tan", "log", "ln", "exp"}
 GRANDS = {"sum": "∑"}

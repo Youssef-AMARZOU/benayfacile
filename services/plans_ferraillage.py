@@ -2,6 +2,8 @@
 
 Un seul fichier DXF, plusieurs feuilles A1 côte à côte dans l'espace objet :
   1. Plan de fondation (implantation des semelles sur la trame, 1:100)
+  1 bis. Plans de coffrage : une planche par niveau (niveaux identiques regroupés),
+     poteaux et voiles coupés, poutres en tireté, panneaux de dalle et balcons
   2. Semelles : vue en plan + coupe par type (1:25)
   3. Poteaux : coupe par type (1:10), cadres et zones critiques
   4. Poutres : élévation (1:50) + coupe (1:20) par type
@@ -34,6 +36,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.units import MM
+
+from common import indice_file, lettre_file, rang_niveau, trier_niveaux  # noqa: F401
 
 # ───────────────────────── aciers ─────────────────────────
 
@@ -118,8 +122,9 @@ CLES = {"poteaux": ("P", _cle_poteau), "poutres": ("Pt", _cle_poutre),
         "semelles": ("S", _cle_semelle), "voiles": ("V", _cle_voile)}
 
 
-def grouper(lot: dict) -> Tuple[Dict[str, List[dict]], List[dict]]:
-    """Types par famille (éléments vérifiés) et liste des éléments non dessinés."""
+def grouper(lot: dict, par_element: bool = False) -> Tuple[Dict[str, List[dict]], List[dict]]:
+    """Types par famille (éléments vérifiés) et liste des éléments non dessinés.
+    par_element : un « type » par élément (un détail dessiné pour chaque élément, au lieu d'un par type)."""
     types, ecartes = {}, []
     for fam, (prefixe, cle) in CLES.items():
         groupes: "OrderedDict[tuple, dict]" = OrderedDict()
@@ -130,6 +135,8 @@ def grouper(lot: dict) -> Tuple[Dict[str, List[dict]], List[dict]]:
                 continue
             try:
                 k = cle(l)
+                if par_element:
+                    k = (id(l),)
             except (KeyError, TypeError):
                 ecartes.append({"famille": fam, "nom": l.get("nom"), "niveau": l.get("niveau"),
                                 "statut": "incomplet", "raison": "données de dessin manquantes"})
@@ -204,9 +211,9 @@ def positions_type(fam: str, t: dict, mat: dict, poteaux_rdc: Dict[str, dict]) -
     return []
 
 
-def nomenclature(lot: dict) -> dict:
+def nomenclature(lot: dict, par_element: bool = False) -> dict:
     """Types, positions et poids : la partie « calcul » des plans (sans dessin)."""
-    types, ecartes = grouper(lot)
+    types, ecartes = grouper(lot, par_element)
     mat = lot.get("materiaux") or {}
     poteaux_rdc = {l.get("axe"): l for l in lot.get("poteaux") or []
                    if l.get("niveau") == "RDC" and l.get("resultat")}
@@ -607,7 +614,7 @@ def plan_fondation(D: Dessin, types: Dict[str, List[dict]], trame_x: Sequence[fl
         py = gy + (yv - trame_y[0]) * k
         D.ligne((gx - 15, py), (gx + lx + 15, py), "AXES", 13, "DASHDOT")
         D.msp.add_circle((gx - 21, py), 4.5, dxfattribs={"layer": "AXES"})
-        D.texte(chr(65 + j), gx - 21, py, 3.8, MC, "AXES")
+        D.texte(lettre_file(j), gx - 21, py, 3.8, MC, "AXES")
     for i in range(len(trame_x) - 1):
         x1, x2 = gx + (trame_x[i] - trame_x[0]) * k, gx + (trame_x[i + 1] - trame_x[0]) * k
         D.cote((x1, gy - 18), (x2, gy - 18), f"{trame_x[i + 1] - trame_x[i]:.2f}", 4)
@@ -619,10 +626,10 @@ def plan_fondation(D: Dessin, types: Dict[str, List[dict]], trame_x: Sequence[fl
         r = t["rep"]["resultat"]
         for l in t["lignes"]:
             axe = l.get("axe") or ""
-            m = re.match(r"([A-Z])(\d+)$", axe)
+            m = re.match(r"([A-Z]+)(\d+)$", axe)
             if not m:
                 continue
-            j, i = ord(m.group(1)) - 65, int(m.group(2)) - 1
+            j, i = indice_file(m.group(1)), int(m.group(2)) - 1
             if i >= len(trame_x) or j >= len(trame_y):
                 continue
             cx, cy = gx + (trame_x[i] - trame_x[0]) * k, gy + (trame_y[j] - trame_y[0]) * k
@@ -688,13 +695,355 @@ def planche_nomenclature(D: Dessin, nomen: dict):
     D.tableau(rx, ry, ["%%c", "kg/m", "Poids (kg)"], [40, 50, 50], rangs, 6.0)
 
 
+# ───────────────────────── plans de coffrage par niveau ─────────────────────────
+
+def _xy_axe(axe: Optional[str], trame_x: Sequence[float], trame_y: Sequence[float]) -> Optional[Tuple[float, float]]:
+    """Repère « B2 » → (x, y) sur la trame (lettre = file en Y, chiffre = file en X)."""
+    m = re.match(r"([A-Z]+)(\d+)$", axe or "")
+    if not m:
+        return None
+    j, i = indice_file(m.group(1)), int(m.group(2)) - 1
+    if i >= len(trame_x) or j >= len(trame_y):
+        return None
+    return float(trame_x[i]), float(trame_y[j])
+
+
+def _segment(e: dict, trame_x, trame_y) -> Optional[Tuple[float, float, float, float]]:
+    """Extrémités en plan d'une poutre ou d'un voile : coordonnées lues, sinon nom « Pt A1-A2 » sur la trame."""
+    if all(e.get(k) is not None for k in ("x1_m", "y1_m", "x2_m", "y2_m")):
+        return float(e["x1_m"]), float(e["y1_m"]), float(e["x2_m"]), float(e["y2_m"])
+    m = re.search(r"([A-Z]+\d+)-([A-Z]+\d+)$", e.get("nom") or "")
+    if m:
+        a, b = _xy_axe(m.group(1), trame_x, trame_y), _xy_axe(m.group(2), trame_x, trame_y)
+        if a and b:
+            return a[0], a[1], b[0], b[1]
+    return None
+
+
+def elements_niveau(lot: dict, dalles: Sequence[dict], trame_x, trame_y,
+                    codes: Dict[int, str]) -> Tuple["OrderedDict[str, List[dict]]", List[dict]]:
+    """Éléments placés en plan, rangés par niveau (ordre du bâtiment), et éléments sans position connue.
+
+    Un plan de coffrage « plancher haut N » montre les poteaux et voiles du niveau N (coupés) et les
+    poutres et panneaux du plancher qui les couvre (même libellé de niveau dans l'extraction).
+    Les éléments non vérifiés sont dessinés (la géométrie est connue) mais repérés par leur nom suivi de « * ».
+    """
+    ordre: List[str] = []
+    z_niv: Dict[str, float] = {}
+
+    def vu(n, z):
+        if n and n not in ordre:
+            ordre.append(n)
+        if n and z is not None:
+            z_niv[n] = min(z_niv.get(n, float("inf")), float(z))
+
+    for fam in ("poteaux", "voiles", "poutres"):
+        for l in lot.get(fam) or []:
+            e = l.get("entree") or {}
+            vu(l.get("niveau") or e.get("niveau"), e.get("z_m") if fam != "poutres" else None)
+    for d in dalles:
+        vu(d.get("niveau"), None)
+    # de bas en haut : par altitude quand le modèle la donne (libellés Robot quelconques), sinon par libellé
+    ordre = trier_niveaux(ordre, z_niv)
+    par_niveau: "OrderedDict[str, List[dict]]" = OrderedDict((n, []) for n in ordre)
+    sans_position: List[dict] = []
+
+    def etiquette(l):
+        return codes.get(id(l)) or f"{l.get('nom')}*"
+
+    for l in lot.get("poteaux") or []:
+        e = l.get("entree") or {}
+        xy = (float(e["x_m"]), float(e["y_m"])) if e.get("x_m") is not None and e.get("y_m") is not None \
+            else _xy_axe(l.get("axe") or e.get("axe"), trame_x, trame_y)
+        if xy is None or not e.get("a_cm") or not e.get("b_cm"):
+            sans_position.append({"famille": "poteaux", "nom": l.get("nom"), "niveau": l.get("niveau"), "statut": "position inconnue"})
+            continue
+        par_niveau[l.get("niveau")].append({"genre": "poteau", "x": xy[0], "y": xy[1], "a": e["a_cm"], "b": e["b_cm"],
+                                            "code": etiquette(l), "verifie": id(l) in codes})
+    for fam, genre, ep in (("poutres", "poutre", "b_cm"), ("voiles", "voile", "ep_cm")):
+        for l in lot.get(fam) or []:
+            e = l.get("entree") or {}
+            seg = _segment(e, trame_x, trame_y)
+            if seg is None or not e.get(ep):
+                sans_position.append({"famille": fam, "nom": l.get("nom"), "niveau": l.get("niveau"), "statut": "position inconnue"})
+                continue
+            par_niveau[l.get("niveau")].append({"genre": genre, "seg": seg, "ep": e[ep], "h": e.get("h_cm"),
+                                                "code": etiquette(l), "verifie": id(l) in codes})
+    for d in dalles:
+        if any(d.get(k) is None for k in ("xmin_m", "xmax_m", "ymin_m", "ymax_m")) or not d.get("niveau"):
+            sans_position.append({"famille": "dalles", "nom": d.get("nom"), "niveau": d.get("niveau"), "statut": "position inconnue"})
+            continue
+        par_niveau[d["niveau"]].append({"genre": d.get("type") or "dalle", "box": (d["xmin_m"], d["ymin_m"], d["xmax_m"], d["ymax_m"]),
+                                        "contour": d.get("contour_m"), "rectangulaire": d.get("rectangulaire", True),
+                                        "h": d.get("h_cm"), "code": d.get("nom") or "D", "verifie": True})
+    return par_niveau, sans_position
+
+
+def _signature(elements: List[dict]) -> tuple:
+    """Deux niveaux de même signature ont le même plan de coffrage (mêmes éléments, mêmes sections, mêmes types)."""
+    def cle(el):
+        g = [el.get("x"), el.get("y")] + list(el.get("seg") or ()) + list(el.get("box") or ())
+        return (el["genre"], tuple(round(v, 2) for v in g if v is not None), el.get("a"), el.get("b"),
+                el.get("ep"), el.get("h"), el["code"])
+    return tuple(sorted((cle(el) for el in elements), key=repr))
+
+
+def regrouper_niveaux(par_niveau: "OrderedDict[str, List[dict]]") -> List[Tuple[List[str], List[dict]]]:
+    """Niveaux consécutifs identiques regroupés (étage courant) ; un niveau vide n'a pas de planche."""
+    groupes: List[Tuple[List[str], List[dict]]] = []
+    prec = None
+    for niv, els in par_niveau.items():
+        if not els:
+            prec = None
+            continue
+        sig = _signature(els)
+        if groupes and sig == prec:
+            groupes[-1][0].append(niv)
+        else:
+            groupes.append(([niv], els))
+        prec = sig
+    return groupes
+
+
+def titre_coffrage(niveaux: List[str]) -> str:
+    if niveaux == ["Fondation"]:
+        return "Coffrage niveau fondation"
+    nom = niveaux[0] if len(niveaux) == 1 else f"{niveaux[0]} à {niveaux[-1]}"
+    return f"Coffrage plancher haut {nom}"
+
+
+DISPO_PLAN = (A1[0] - 2 * MARGE - 230 - 80, A1[1] - 2 * MARGE - 40 - 70)   # zone de dessin d'une planche (mm)
+ECHELLE_MAX_COFFRAGE = 100        # au-delà, le plan est découpé en parties plutôt que réduit (lisibilité des sections)
+
+
+def _etendue(els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float]) -> Tuple[float, float, float, float]:
+    xs = list(trame_x) + [el["x"] for el in els if "x" in el]
+    ys = list(trame_y) + [el["y"] for el in els if "y" in el]
+    for el in els:
+        if "seg" in el:
+            xs += [el["seg"][0], el["seg"][2]]; ys += [el["seg"][1], el["seg"][3]]
+        if "box" in el:
+            xs += [el["box"][0], el["box"][2]]; ys += [el["box"][1], el["box"][3]]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _dans(el: dict, f: Tuple[float, float, float, float], tol: float = 0.05) -> bool:
+    """L'élément touche la fenêtre (x0, x1, y0, y1) : il est dessiné sur cette partie."""
+    x0, x1, y0, y1 = f
+    if "x" in el:
+        pts = [(el["x"], el["y"])]
+    elif "seg" in el:
+        a, b, c, d = el["seg"]
+        if max(a, c) < x0 - tol or min(a, c) > x1 + tol or max(b, d) < y0 - tol or min(b, d) > y1 + tol:
+            return False
+        return True
+    else:
+        a, b, c, d = el["box"]
+        return not (c < x0 - tol or a > x1 + tol or d < y0 - tol or b > y1 + tol)
+    return all(x0 - tol <= x <= x1 + tol and y0 - tol <= y <= y1 + tol for x, y in pts)
+
+
+def decouper_plan(els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float]) -> Tuple[int, List[tuple]]:
+    """Échelle et fenêtres du plan. Le plan tient sur une planche jusqu'au 1:100 ; sinon il est découpé
+    en parties suivant sa plus grande dimension, aux files de la trame les plus proches (repères conservés)."""
+    x0, x1, y0, y1 = _etendue(els, trame_x, trame_y)
+    ex, ey = (x1 - x0) or 1.0, (y1 - y0) or 1.0
+    dl, dh = DISPO_PLAN
+    for ech in (50, ECHELLE_MAX_COFFRAGE):
+        if ex * 1000 / ech <= dl and ey * 1000 / ech <= dh:
+            return ech, [(x0, x1, y0, y1)]
+    ech = ECHELLE_MAX_COFFRAGE
+    if ey * 1000 / ech > dh and ey / dh >= ex / dl:          # découpe suivant Y
+        n = math.ceil(ey * 1000 / ech / dh)
+        coupes = _coupes(y0, y1, n, trame_y)
+        if ex * 1000 / ech > dl:                              # trop large aussi : échelle 1:200
+            ech = 200
+        return ech, [(x0, x1, a, b) for a, b in zip(coupes, coupes[1:])]
+    n = math.ceil(ex * 1000 / ech / dl)
+    coupes = _coupes(x0, x1, n, trame_x)
+    if ey * 1000 / ech > dh:
+        ech = 200
+    return ech, [(a, b, y0, y1) for a, b in zip(coupes, coupes[1:])]
+
+
+def _coupes(a: float, b: float, n: int, files: Sequence[float]) -> List[float]:
+    """n parties égales entre a et b, chaque coupe ramenée sur la file la plus proche."""
+    coupes = [a]
+    for k in range(1, n):
+        v = a + (b - a) * k / n
+        v = min(files, key=lambda f: abs(f - v)) if files else v
+        if coupes[-1] < v < b:
+            coupes.append(v)
+    return coupes + [b]
+
+
+def planche_coffrage(D: Dessin, niveaux: List[str], els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float],
+                     ech: Optional[int] = None, fenetre: Optional[tuple] = None, partie: Optional[Tuple[int, int]] = None):
+    if fenetre is None:
+        ech, fen = decouper_plan(els, trame_x, trame_y)
+        fenetre = fen[0]
+    fx0, fx1, fy0, fy1 = fenetre
+    tol = 0.05
+    # files visibles sur cette partie, avec leur repère d'origine
+    ax_x = [(i, v) for i, v in enumerate(trame_x) if fx0 - tol <= v <= fx1 + tol]
+    ax_y = [(j, v) for j, v in enumerate(trame_y) if fy0 - tol <= v <= fy1 + tol]
+    trame_x, trame_y = [v for _, v in ax_x], [v for _, v in ax_y]
+    ox, x1_, oy, y1_ = _etendue(els, trame_x, trame_y)
+    ex, ey = (x1_ - ox) or 1.0, (y1_ - oy) or 1.0
+    dispo_l, dispo_h = DISPO_PLAN
+    k = 1000.0 / ech
+    sous = (f"Niveaux {', '.join(niveaux)} identiques — " if len(niveaux) > 1 else "") + \
+        f"poteaux et voiles coupés, poutres en tireté — échelle 1:{ech} — cotes en mètres"
+    titre = titre_coffrage(niveaux) + (f" — partie {partie[0]}/{partie[1]}" if partie and partie[1] > 1 else "")
+    if partie and partie[1] > 1:
+        sous = f"Files {ax_x[0][0] + 1}-{ax_x[-1][0] + 1} / {lettre_file(ax_y[0][0])}-{lettre_file(ax_y[-1][0])} — " + sous
+    P = Planche(D, titre, sous, (0, 0))
+    gx = P.x0 + MARGE + 40 + (dispo_l - ex * k) / 2
+    gy = P.y0 + MARGE + 45 + (dispo_h - ey * k) / 2
+
+    def pt(x, y):
+        return gx + (x - ox) * k, gy + (y - oy) * k
+
+    # trame : axes repérés et cotés
+    if trame_x and trame_y:
+        _, yb = pt(0, min(trame_y)); _, yh = pt(0, max(trame_y))
+        xg, _ = pt(min(trame_x), 0); xd, _ = pt(max(trame_x), 0)
+        for i, xv in ax_x:
+            px, _ = pt(xv, 0)
+            D.ligne((px, yb - 15), (px, yh + 15), "AXES", 13, "DASHDOT")
+            D.msp.add_circle((px, yh + 21), 4.5, dxfattribs={"layer": "AXES"})
+            D.texte(str(i + 1), px, yh + 21, 3.8, MC, "AXES")
+        for j, yv in ax_y:
+            _, py = pt(0, yv)
+            D.ligne((xg - 15, py), (xd + 15, py), "AXES", 13, "DASHDOT")
+            D.msp.add_circle((xg - 21, py), 4.5, dxfattribs={"layer": "AXES"})
+            D.texte(lettre_file(j), xg - 21, py, 3.8, MC, "AXES")
+        for i in range(len(trame_x) - 1):
+            D.cote((pt(trame_x[i], 0)[0], yb - 18), (pt(trame_x[i + 1], 0)[0], yb - 18), f"{trame_x[i + 1] - trame_x[i]:.2f}", 4)
+        for j in range(len(trame_y) - 1):
+            D.cote((xd + 30, pt(0, trame_y[j])[1]), (xd + 30, pt(0, trame_y[j + 1])[1]), f"{trame_y[j + 1] - trame_y[j]:.2f}", -4)
+
+    def bande(x1, y1, x2, y2, larg_m, calque, type_trait=None, remplir=False):
+        """Bande de largeur larg_m centrée sur le segment (poutre, voile)."""
+        (a1, b1), (a2, b2) = pt(x1, y1), pt(x2, y2)
+        lg = math.hypot(a2 - a1, b2 - b1) or 1.0
+        nx, ny = -(b2 - b1) / lg * larg_m * k / 2, (a2 - a1) / lg * larg_m * k / 2
+        coins = [(a1 + nx, b1 + ny), (a2 + nx, b2 + ny), (a2 - nx, b2 - ny), (a1 - nx, b1 - ny)]
+        D.ligne(coins[0], coins[1], calque, 35, type_trait)
+        D.ligne(coins[3], coins[2], calque, 35, type_trait)
+        if remplir:
+            D.ligne(coins[1], coins[2], calque, 35)
+            D.ligne(coins[3], coins[0], calque, 35)
+            h = D.msp.add_hatch(color=8, dxfattribs={"layer": calque})
+            h.paths.add_polyline_path(coins, is_closed=True)
+        return (a1 + a2) / 2, (b1 + b2) / 2, math.degrees(math.atan2(b2 - b1, a2 - a1))
+
+    def texte_tourne(t, x, y, angle):
+        if 90 < angle % 360 <= 270:
+            angle -= 180
+        D.msp.add_text(str(t).replace("Ø", "%%c"), height=2.4,
+                       dxfattribs={"layer": "TEXTE", "style": "BNAY", "rotation": angle}).set_placement(
+            (x, y), align=TextEntityAlignment.BOTTOM_CENTER)
+
+    for el in els:                       # panneaux d'abord, sous le reste
+        if "box" in el:
+            (a1, b1), (a2, b2) = pt(el["box"][0], el["box"][1]), pt(el["box"][2], el["box"][3])
+            if el.get("contour") and not el.get("rectangulaire", True):     # panneau en L, trapèze… : son vrai contour
+                D.msp.add_lwpolyline([pt(x, y) for x, y in el["contour"]], close=True,
+                                     dxfattribs={"layer": "BETON_PROPRETE", "lineweight": 18})
+            else:
+                D.rect(a1, b1, a2 - a1, b2 - b1, "BETON_PROPRETE", 18)
+                D.ligne((a1, b1), (a2, b2), "BETON_PROPRETE", 13)
+            nature = "balcon" if el["genre"] == "balcon" else "dalle"
+            D.texte(f"{el['code']} — {nature}" + (f" h = {el['h']:g} cm" if el.get("h") else ""),
+                    (a1 + a2) / 2, (b1 + b2) / 2 + 3, 2.6, MC, "TEXTE")
+    for el in els:
+        if el["genre"] == "poutre":
+            x, y, ang = bande(*el["seg"], el["ep"] / 100, "COFFRAGE", "DASHED")
+            texte_tourne(f"{el['code']} {el['ep']:g}×{el['h']:g}" if el.get("h") else el["code"], x, y + 1, ang)
+        elif el["genre"] == "voile":
+            x, y, ang = bande(*el["seg"], el["ep"] / 100, "COFFRAGE", None, remplir=True)
+            texte_tourne(f"{el['code']} ép. {el['ep']:g}", x + 3, y, ang)
+    for el in els:
+        if el["genre"] == "poteau":
+            cx, cy = pt(el["x"], el["y"])
+            a, b = el["a"] / 100 * k, el["b"] / 100 * k
+            coins = [(cx - a / 2, cy - b / 2), (cx + a / 2, cy - b / 2), (cx + a / 2, cy + b / 2), (cx - a / 2, cy + b / 2)]
+            D.rect(cx - a / 2, cy - b / 2, a, b, "COFFRAGE", 50)
+            h = D.msp.add_hatch(color=7, dxfattribs={"layer": "COFFRAGE"})
+            h.paths.add_polyline_path(coins, is_closed=True)
+            D.texte(f"{el['code']} {el['a']:g}×{el['b']:g}", cx + a / 2 + 1.2, cy + b / 2 + 1.2, 2.4, BL, "TEXTE")
+
+    # tableau des éléments du plancher, à droite
+    comptes: "OrderedDict[tuple, int]" = OrderedDict()
+    noms = {"poteau": "Poteau", "poutre": "Poutre", "voile": "Voile", "dalle": "Dalle", "balcon": "Balcon"}
+    for el in sorted(els, key=lambda e: list(noms).index(e["genre"]) if e["genre"] in noms else 9):
+        if el["genre"] == "poteau":
+            sec = f"{el['a']:g} × {el['b']:g}"
+        elif el["genre"] in ("poutre", "voile"):
+            sec = f"{el['ep']:g} × {el['h']:g}" if el.get("h") else f"ép. {el['ep']:g}"
+        else:
+            sec = f"h = {el['h']:g}" if el.get("h") else "—"
+        cle = (noms.get(el["genre"], el["genre"]), el["code"], sec)
+        comptes[cle] = comptes.get(cle, 0) + 1
+    tx = P.x0 + A1[0] - MARGE - 190
+    ty = P.y0 + A1[1] - MARGE - 40
+    D.texte("Éléments du plancher" + (" (par niveau)" if len(niveaux) > 1 else ""), tx, ty, 4.0)
+    rangs = [[g, c, s, n] for (g, c, s), n in list(comptes.items())[:60]]
+    yfin = D.tableau(tx, ty - 5, ["Élément", "Type", "Section (cm)", "Nb"], [40, 50, 60, 20], rangs, 5.0)
+    if any(not el["verifie"] for el in els):
+        D.texte("* élément non vérifié : type non attribué, à reprendre avant exécution.", tx, yfin - 6, 2.4, BL, "ACIER_LONG")
+    return P
+
+
+def planches_coffrage(D: Dessin, lot: dict, types: Dict[str, List[dict]], dalles: Sequence[dict],
+                      trame_x: Sequence[float], trame_y: Sequence[float]) -> List[List[str]]:
+    """Une planche de coffrage par niveau (niveaux identiques regroupés). Renvoie les groupes de niveaux dessinés."""
+    codes = {id(l): t["code"] for liste in types.values() for t in liste for l in t["lignes"]}
+    par_niveau, sans_position = elements_niveau(lot, dalles, list(trame_x), list(trame_y), codes)
+    groupes = regrouper_niveaux(par_niveau)
+    for i, (niveaux, els) in enumerate(groupes):
+        ech, fenetres = decouper_plan(els, list(trame_x), list(trame_y))
+        for n, f in enumerate(fenetres, start=1):
+            sous_els = [el for el in els if _dans(el, f)]
+            P = planche_coffrage(D, niveaux, sous_els, list(trame_x), list(trame_y), ech, f, (n, len(fenetres)))
+            if i == 0 and n == 1 and sans_position:
+                D.ecartes(P, sans_position)
+    if not groupes and sans_position:
+        P = Planche(D, "Coffrage — éléments sans position", "Positions en plan inconnues : plans de coffrage impossibles", (0, 0))
+        D.ecartes(P, sans_position)
+    return [n for n, _ in groupes]
+
+
+def nom_presentation(num: int, titre: str) -> str:
+    """Nom d'onglet AutoCAD : « 01 Plan de fondation » (caractères interdits retirés, 64 car. au plus)."""
+    return f"{num:02d} " + re.sub(r'[<>/\\":;?*|=`]', " ", titre).strip()[:60]
+
+
+def presentations(D: Dessin):
+    """Une présentation (onglet) A1 par planche, avec une fenêtre à l'échelle 1:1 sur la feuille de l'espace objet,
+    et l'espace objet ouvert sur l'ensemble des planches : l'utilisateur voit tout le dossier à l'ouverture."""
+    W, H = A1
+    for P in D.planches:
+        lay = D.doc.layouts.new(nom_presentation(P.num, P.titre))
+        lay.page_setup(size=(W, H), margins=(0, 0, 0, 0), units="mm")
+        lay.add_viewport(center=(W / 2, H / 2), size=(W, H),
+                         view_center_point=(P.x0 + W / 2, P.y0 + H / 2), view_height=H)
+    if D.planches and "Layout1" in D.doc.layouts:
+        D.doc.layouts.delete("Layout1")
+    largeur = len(D.planches) * (W + ESPACE_FEUILLES) - ESPACE_FEUILLES
+    D.doc.set_modelspace_vport(height=max(H, largeur * 0.6) * 1.05, center=(largeur / 2, H / 2))
+
+
 def dessiner_plans(lot: dict, projet: dict, bureau: Optional[dict], trame_x: Sequence[float],
-                   trame_y: Sequence[float]) -> Tuple[ezdxf.document.Drawing, dict]:
-    nomen = nomenclature(lot)
+                   trame_y: Sequence[float], dalles: Optional[Sequence[dict]] = None,
+                   par_element: bool = False) -> Tuple[ezdxf.document.Drawing, dict]:
+    nomen = nomenclature(lot, par_element)
     types, ecartes, mat = nomen["types"], nomen["ecartes"], lot.get("materiaux") or {}
     D = Dessin(projet, bureau or {})
     if types.get("semelles") and trame_x and trame_y:
         plan_fondation(D, types, list(trame_x), list(trame_y))
+    niveaux = planches_coffrage(D, lot, types, list(dalles or []), trame_x, trame_y)
     planches_famille(D, "semelles", "Ferraillage des semelles", "Vue en plan et coupe — échelle 1:25",
                      (260, 150), vue_semelle, types, mat, ecartes)
     planches_famille(D, "poteaux", "Ferraillage des poteaux", "Coupes — échelle 1:10 — zones critiques RPS 2011",
@@ -705,8 +1054,11 @@ def dessiner_plans(lot: dict, projet: dict, bureau: Optional[dict], trame_x: Seq
                      (200, 120), vue_voile, types, mat, ecartes)
     if nomen["lignes"]:
         planche_nomenclature(D, nomen)
+    presentations(D)
     resume = {
         "planches": [p.titre for p in D.planches],
+        "niveaux_dessines": [n for g in niveaux for n in g],
+        "planches_coffrage": len(niveaux),
         "types": {fam: len(liste) for fam, liste in types.items()},
         "elements_dessines": sum(len(t["lignes"]) for liste in types.values() for t in liste),
         "elements_non_dessines": len(ecartes),

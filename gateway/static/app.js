@@ -7,7 +7,7 @@ const state = {
   project: { projet: '', client: '', site: '', indice: 'A', objet: '', architecte: '', controle: '', laboratoire: '', phase: 'Exécution' },   // projet de l'utilisateur, vierge au démarrage
   robot: null,
   sismique: null,
-  poteaux: [], poutres: [], semelles_isolees: [], semelles_filantes: [], voiles: [], dalles: [], balcons: [],
+  poteaux: [], poutres: [], semelles_isolees: [], semelles_filantes: [], voiles: [], dalles: [], balcons: [], planchers: [],
   bureau: {},
 };
 
@@ -19,6 +19,7 @@ const MODULES = [
   { id: 'semelle_filante', label: 'Semelles filantes', groupe: 'Éléments', ref: 'Méthode des bielles' },
   { id: 'voile', label: 'Voiles', groupe: 'Éléments', ref: 'BAEL B.8.4' },
   { id: 'dalle', label: 'Dalles et balcons', groupe: 'Éléments', ref: 'BAEL A.8.2 · Annexe E3' },
+  { id: 'plancher', label: 'Planchers à corps creux', groupe: 'Éléments', ref: 'BAEL B.6.2 · B.6.8,42' },
   { id: 'sismique', label: 'Vérification sismique', groupe: 'Bâtiment', ref: 'RPS 2000 v2011' },
   { id: 'synthese', label: 'Synthèse de calcul', groupe: 'Livrables', ref: 'Note + plan DXF' },
   { id: 'bureau', label: 'Votre bureau', groupe: 'Réglages', ref: 'Page de garde et cartouche' },
@@ -34,6 +35,7 @@ const GLYPHES = {
   semelle_filante: '<rect x="2" y="7" width="22" height="12"/><rect x="2" y="10.5" width="22" height="5" stroke-width="1"/><path class="acier-l" d="M6 7v12 M11 7v12 M16 7v12 M21 7v12" stroke-dasharray="0" opacity=".9"/>',
   voile: '<rect x="8" y="2" width="10" height="22"/><path class="acier-l" d="M10.5 3.5v19 M15.5 3.5v19"/><path d="M8.5 8h9 M8.5 13h9 M8.5 18h9" stroke-width=".9"/>',
   dalle: '<path d="M2 9h22v5H2z"/><path d="M24 9h0"/><path d="M5 14v8 M21 14v8"/><path class="acier-l" d="M3 10.6h20"/><path d="M2 9 1 7.5" stroke-width=".9"/>',
+  plancher: '<path d="M2 7h22v3H2z"/><path d="M4 10v6h5v-6 M10.5 10v6h5v-6 M17 10v6h5v-6" stroke-width=".9"/><path d="M2 16h22"/><path class="acier-l" d="M3 15h20"/><path d="M5 16v6 M21 16v6"/>',
   sismique: '<path d="M2 19.5h22"/><path d="M8 19.5V6h10v13.5 M8 11h10 M8 15.5h10"/><path class="acier-l" d="M2 23.2c1.6-1.8 2.9 1.8 4.5 0s2.9 1.8 4.5 0 2.9 1.8 4.5 0 2.9 1.8 4.5 0 1.9 1.2 2 0"/>',
   synthese: '<path d="M6 2h10l5 5v17H6z"/><path d="M16 2v5h5"/><path class="acier-l" d="M9 12h9"/><path d="M9 15.5h9 M9 19h6"/>',
   bureau: '<rect x="2" y="6" width="22" height="14"/><path d="M2 12.5h22 M15 6v14 M15 16.2h9"/><path class="acier-l" d="M4.5 9.2h8"/>',
@@ -195,8 +197,26 @@ function synthesisPayload() {
     robot: state.robot || undefined, sismique: state.sismique || undefined,
     poteaux: state.poteaux, poutres: state.poutres,
     semelles_isolees: state.semelles_isolees, semelles_filantes: state.semelles_filantes,
-    voiles: state.voiles, dalles: state.dalles, balcons: state.balcons, bureau: state.bureau,
+    voiles: state.voiles, dalles: state.dalles, balcons: state.balcons, planchers: state.planchers, bureau: state.bureau,
   };
+}
+async function dossierPlansDxf(lot, trame, el, dalles, regroupement) {
+  el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
+  const p = state.project;
+  const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot,
+      trame_x_m: trame?.x || [], trame_y_m: trame?.y || [], dalles: dalles || [], regroupement: regroupement || 'type', bureau: state.bureau }) });
+  const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
+  const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
+  const planches = r.planches.map((t, i) => `<li>${String(i + 1).padStart(2, '0')} ${esc(t)}</li>`).join('');
+  const nv = r.niveaux_dessines || [];
+  el.innerHTML = `<b>${r.planches.length} planches A1</b>, une par onglet de présentation dans AutoCAD (en bas de l'écran)`
+    + (nv.length ? `, dont ${r.planches_coffrage} plans de coffrage couvrant ${nv.length} niveaux (${esc(nv[0])} à ${esc(nv[nv.length - 1])})` : '')
+    + ' :'
+    + `<ol class="planches">${planches}</ol>`
+    + `${types} — ${r.elements_dessines} éléments dessinés, ${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
+    + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
+    + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
 }
 function addToSynthesis(type, item) {
   state[type].push(item);
@@ -215,7 +235,7 @@ function renderSynthesis() {
   const groups = [
     ['poteaux', 'Poteaux'], ['poutres', 'Poutres'],
     ['semelles_isolees', 'Semelles isolées'], ['semelles_filantes', 'Semelles filantes'], ['voiles', 'Voiles'],
-    ['dalles', 'Dalles'], ['balcons', 'Balcons'],
+    ['dalles', 'Dalles'], ['balcons', 'Balcons'], ['planchers', 'Planchers'],
   ];
   let html = '';
   if (state.robot) html += `<li><span><b>Modèle Robot</b> — ${esc(state.robot.nom)} <span class="badge">${esc(state.robot.mode || 'simulation')}</span></span><button data-del="robot">✕</button></li>`;
@@ -227,6 +247,7 @@ function renderSynthesis() {
       else if (key === 'poutres') desc = `b×h ${item.b_cm}×${item.h_cm} cm — ${item.mu_knm != null ? `Mu ${item.mu_knm} kN.m` : `μ ${item.mu}`} — ${item.ferraillage?.choix || ''}`;
       else if (key === 'voiles') desc = `L = ${item.longueur_m} m — σmax ${item.sigma_max_mpa} MPa`;
       else if (key === 'dalles') desc = `${item.lx_m} × ${item.ly_m} m, h ${item.h_cm} cm — travée x ${item.resultats?.x_travee?.ferraillage?.choix || '—'}`;
+      else if (key === 'planchers') desc = `${item.designation}, travées ${item.travees_m.join(' ; ')} m — ${item.methode}`;
       else if (key === 'balcons') desc = `l = ${item.longueur_m} m, h ${item.h_cm} cm — nappe sup. ${item.nappe_superieure?.ferraillage?.choix || '—'}`;
       else desc = `A ${item.A_m} × B ${item.B_m} — H ${item.H_m} m — ${item.acier_x} / ${item.acier_y}`;
       const titre = item.nom ? `${item.nom}${item.niveau ? ' · ' + item.niveau : ''}` : `${label} #${i + 1}`;
@@ -300,10 +321,12 @@ function tabProjet() {
       <button class="btn ghost small" id="rb-xlsx" disabled>Exporter en Excel</button>
       <button class="btn ghost small" id="rb-dxf" disabled>Plans de ferraillage (DXF)</button>
     </div>
+    ${select('rb-regroup', "Détails de ferraillage dans le DXF", [['type', 'Un par type (dossier d’exécution, éléments identiques regroupés)'], ['element', 'Un par élément (chaque poteau, poutre, voile dessiné)']], 'type')}
     <div class="export" id="rb-xlsx-res"></div>
     <div class="export" id="rb-dxf-res"></div>
   </div>
 </div>
+<div class="card" id="rb-3d-carte" hidden><h2>Vue 3D du modèle</h2><div class="vue3d" id="rb-3d"></div></div>
 <div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
     init() {
       /* demo : exemple R+4 ; chemin : .rtd à faire ouvrir par Robot ; sinon : projet déjà ouvert dans Robot. */
@@ -347,6 +370,11 @@ function tabProjet() {
             ['Semelles', o.resume.semelles, true], ['Voiles', o.resume.voiles, true],
           ]) + notes(o.remarques) + `<details><summary>Hypothèses ${{ robot: 'de la lecture', excel: "de l'import" }[r.mode] || 'de la simulation'}</summary>${notes(o.hypotheses)}</details>`;
           $('rb-calc').disabled = false; $('rb-add').disabled = true;
+          if (window.Vue3D) {
+            $('rb-3d-carte').hidden = false;
+            vue.v3d = vue.v3d || window.Vue3D($('rb-3d'));
+            vue.v3d.charger(o);
+          }
           const total = o.resume.poteaux + o.resume.poutres + o.resume.semelles + o.resume.voiles;
           $('rb-res').innerHTML = vide('projet', `${total} éléments prêts. Lancez « Calculer tout le modèle ».`);
         } catch (e) { afficherErreur(el, e, {}, 'Lecture du modèle impossible. '); }
@@ -386,6 +414,7 @@ function tabProjet() {
           vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
           dessiner();
+          vue.v3d?.etats(vue.lot);
           $('rb-add').disabled = false; $('rb-xlsx').disabled = false; $('rb-dxf').disabled = false;
           $('rb-xlsx-res').innerHTML = ''; $('rb-dxf-res').innerHTML = '';
         } catch (e) { afficherErreur(resEl, e, CH_PROJET); }
@@ -403,6 +432,8 @@ function tabProjet() {
           n += state[f.synthese].length;
         }
         state.lot = vue.lot;
+        state.trame = { x: vue.modele?.ossature?.trame_x_m || [], y: vue.modele?.ossature?.trame_y_m || [] };
+        state.dallesModele = vue.modele?.ossature?.dalles || [];
         renderSynthesis();
         toast(`${n} éléments envoyés à la synthèse.`);
       });
@@ -415,24 +446,22 @@ function tabProjet() {
           const r = await api('/api/report/excel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot, bureau: state.bureau }) });
           const url = '/api/report/excel/' + encodeURIComponent(r.fichier);
-          el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code>.<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+          const m = r.metre || {};
+          const nf = (v, d = 1) => (v ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: d });
+          el.innerHTML = `Classeur enregistré dans <code>${esc(r.dossier)}</code> : résultats par famille, `
+            + `<b>métré détaillé</b> (une ligne par élément) et <b>récapitulatif</b>.`
+            + (r.metre ? `<br>Béton ${nf(m.beton_total_m3, 2)} m³ · acier ${nf(m.acier_total_kg, 0)} kg · `
+              + `ratio ${nf(m.ratio_kg_m3)} kg/m³ · ${nf(m.barres_total, 0)} barres de ${m.longueur_commerciale_m} m.` : '')
+            + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
         } catch (e) { afficherErreur(el, e, {}, 'Export impossible. '); }
       });
 
       $('rb-dxf').addEventListener('click', async () => {
         if (!vue.lot) return;
-        const el = $('rb-dxf-res'); el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
+        const el = $('rb-dxf-res');
         try {
-          const p = state.project, o = vue.modele?.ossature || {};
-          const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot,
-              trame_x_m: o.trame_x_m || [], trame_y_m: o.trame_y_m || [], bureau: state.bureau }) });
-          const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
-          const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
-          el.innerHTML = `${r.planches.length} planches A1 — ${types} — ${r.elements_dessines} éléments dessinés, `
-            + `${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
-            + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
-            + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+          const o = vue.modele?.ossature || {};
+          await dossierPlansDxf(vue.lot, { x: o.trame_x_m, y: o.trame_y_m }, el, o.dalles, $('rb-regroup')?.value);
         } catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
 
@@ -701,7 +730,7 @@ ${row2(field('v-v', "V — effort tranchant ELU (kN)", '', 'number', 'any', 180)
 /* ============ MODULE: SYNTHÈSE ============ */
 function tabSynthese() {
   return {
-    html: `<h1 class="module-title">Synthèse de Calcul <small>Note de calcul HTML (page de garde, références BAEL/RPS, calculs, audit arithmétique) + plan DXF A3</small></h1>
+    html: `<h1 class="module-title">Synthèse de Calcul <small>Note de calcul HTML (page de garde, références BAEL/RPS, calculs, audit arithmétique) + dossier de plans DXF</small></h1>
 <div class="grid"><div class="card"><h2>Projet</h2>
 ${field('sy-projet', "Projet", state.project.projet, 'text', 'any', 'Résidence Al Amal, R+3')}
 ${row2(field('sy-client', "Client", state.project.client, 'text', 'any', "Maître d'ouvrage"), field('sy-site', "Site", state.project.site, 'text', 'any', 'Ville, quartier'))}
@@ -713,9 +742,9 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
 <ul class="items-list" id="synthesis-items"></ul>
 <div class="actions-col">
   <button class="btn gold" id="sy-note">Générer la note de calcul</button>
+  <button class="btn" id="sy-note-docx">Exporter la note en Word (.docx)</button>
   <button class="btn" id="sy-note-save">Sauvegarder la note (serveur /output)</button>
-  <button class="btn" id="sy-dxf">Générer le plan DXF (semelles)</button>
-  <a class="btn ghost small" id="sy-dxf-link" style="display:none; text-align:center">Télécharger le DXF</a>
+  <button class="btn" id="sy-dxf">Générer le dossier de plans DXF</button>
 </div>
 </div>
 <div class="card"><h2>Aperçu</h2><div class="result" id="sy-log">${vide('synthese', 'La note suit la présentation d’un bureau d’études : page de garde et intervenants, règlements, hypothèses, étude sismique, ferraillage par type avec un exemple de calcul détaillé, quantités, conclusion et réserves.')}</div></div></div>`,
@@ -740,6 +769,20 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
           log('Note de calcul affichée. Bouton « Imprimer / PDF » pour l\'enregistrer en PDF.');
         } catch (e) { log('Erreur : ' + e.message); }
       });
+      $('sy-note-docx').addEventListener('click', async () => {
+        const el = $('sy-log');
+        el.innerHTML = '<span class="spinner"></span>Création du document Word…';
+        try {
+          const r = await api('/api/report/note/docx', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(synthesisPayload()) });
+          const url = '/api/report/note/docx/' + encodeURIComponent(r.fichier);
+          el.innerHTML = `<p>Note Word enregistrée dans <code>${esc(r.dossier)}</code> : même contenu que la note `
+            + `affichée (${r.titres} titres, ${r.tableaux} tableaux, ${r.equations} équations).</p>`
+            + (r.equations_natives ? '' : `<p class="warn">Microsoft Office n'a pas été trouvé sur ce poste : `
+              + `${r.equations - r.equations_converties} équation(s) sont écrites en texte linéaire, pas en équations Word.</p>`)
+            + `<a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+        } catch (e) { afficherErreur(el, e, {}, 'Export Word impossible. '); }
+      });
       $('sy-note-save').addEventListener('click', async () => {
         log('Sauvegarde…');
         try {
@@ -749,22 +792,16 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
         } catch (e) { log('Erreur : ' + e.message); }
       });
       $('sy-dxf').addEventListener('click', async () => {
-        log('Génération du plan DXF…');
-        try {
-          const footings = (state.semelles_isolees.length ? state.semelles_isolees : [{ A_m: 2.27, B_m: 2.27, H_m: 0.49, d_m: 0.43, asx_cm2: 19.6, asy_cm2: 19.6, acier_x: '13 HA14', acier_y: '13 HA14' }])
-            .map((s, i) => ({ nom: 'S' + (i + 1), A_m: s.A_m, B_m: s.B_m, H_m: s.H_m, d_m: s.d_m,
-              asx_cm2: s.asx_cm2, asy_cm2: s.asy_cm2, acier_x: s.acier_x, acier_y: s.acier_y,
-              cote_x_m: [0, 6, 12][i % 3], cote_y_m: [0, 5, 10][Math.floor(i / 3) % 3] }));
-          const payload = { projet: state.project.projet, client: state.project.client, site: state.project.site,
-            indice: state.project.indice, trame_x_m: [0, 6, 12], trame_y_m: [0, 5, 10],
-            footings, bureau: state.bureau, sortie: 'plan_fondation' };
-          const r = await api('/api/dxf/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          const a = $('sy-dxf-link');
-          a.href = '/api/dxf/download/' + r.fichier;
-          a.textContent = `Télécharger ${r.fichier} (${r.octets} octets)`;
-          a.style.display = 'inline-block';
-          log('Plan DXF généré (calques AXES/COFFRAGE/ACIER_LONG/CADRES/COTATION/CARTOUCHE).');
-        } catch (e) { log('Erreur : ' + e.message); }
+        const el = $('sy-log');
+        if (!state.lot) {
+          el.innerHTML = '<p class="warn">Le dossier de plans se dessine à partir du modèle complet : il faut connaître '
+            + 'la position de chaque élément sur la trame et son niveau. Les éléments calculés un par un ne les ont pas.</p>'
+            + '<p>Ouvrez <a href="#" data-aller="projet">Projet Robot</a> (Robot ou classeur Excel), lancez le calcul, '
+            + 'puis « Envoyer à la synthèse » ou « Plans de ferraillage (DXF) ».</p>';
+          return;
+        }
+        try { await dossierPlansDxf(state.lot, state.trame, el, state.dallesModele); }
+        catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
     }
   };
@@ -841,6 +878,56 @@ ${select('b-fis', "Fissuration", FISSURATION_OPTIONS, 'prejudiciable')}
           $('b-add').disabled = false;
           $('b-add').onclick = () => addToSynthesis('balcons', { ...r, nom: $('b-nom').value.trim() || undefined, niveau: $('b-niveau').value.trim() || undefined });
         } catch (e) { afficherErreur(resEl, e, CH_BALCON); }
+      });
+    }
+  };
+}
+
+/* ============ MODULE: PLANCHERS À CORPS CREUX ============ */
+const CH_PLANCHER = { travees_m: 'p-trav', hourdis_cm: 'p-hourdis', dalle_compression_cm: 'p-h0', b0_cm: 'p-b0',
+  entraxe_cm: 'p-ent', g_plancher_kn_m2: 'p-gp', g_sup_kn_m2: 'p-g', q_kn_m2: 'p-q', fc28_mpa: 'p-fc' };
+function lirePortees(txt) {
+  return txt.split(/[;\s]+/).map(x => x.replace(',', '.')).filter(Boolean).map(Number);
+}
+function tabPlancher() {
+  return {
+    html: `<h1 class="module-title">Planchers à corps creux <small>hourdis, poutrelles en T et dalle de compression (BAEL B.6.2 : méthode forfaitaire ou de Caquot ; B.6.8,42 : treillis et flèche)</small></h1>
+<div class="grid"><div class="card"><h2>Plancher</h2>
+${row2(field('p-nom', "Repère", '', 'text', 'any', 'PL1'), field('p-niveau', "Niveau", '', 'text', 'any', 'R+1 à R+3'))}
+${field('p-trav', "Portées des poutrelles, de gauche à droite (m)", '', 'text', 'any', '4,00 ; 4,00 ; 3,60')}
+${row2(field('p-hourdis', "Hauteur du hourdis (cm)", '', 'number', 'any', 16), field('p-h0', "Dalle de compression h0 (cm)", '', 'number', 'any', 4))}
+${row2(field('p-b0', "Largeur de la nervure b0 (cm)", '', 'number', 'any', 12), field('p-ent', "Entraxe des poutrelles (cm)", '', 'number', 'any', 60))}
+${row2(field('p-gp', "Poids propre du plancher (kN/m²)", '', 'number', 'any', 2.8), field('p-g', "Revêtement, enduit, cloisons (kN/m²)", '', 'number', 'any', 2.2))}
+${row2(field('p-q', "Q — exploitation (kN/m²)", '', 'number', 'any', 1.5), field('p-fc', "fc28 (MPa)", 25))}
+${select('p-type', "Poutrelles", [['coulee_en_place', 'Coulées en place'], ['prefabriquee', 'Préfabriquées (reprise de bétonnage)']], 'coulee_en_place')}
+<div class="actions"><button class="btn gold" id="p-calc">Calculer le plancher</button>
+<button class="btn ghost small" id="p-add" disabled>Ajouter à la synthèse</button></div>
+</div>
+<div class="card"><h2>Résultat — plancher</h2><div class="result" id="p-res">${vide('plancher')}</div></div></div>`,
+    init() {
+      const num = (id, defaut = 0) => ($(id).value.trim() === '' ? defaut : +$(id).value);
+      $('p-calc').addEventListener('click', async () => {
+        const resEl = $('p-res'); spinner(resEl);
+        try {
+          exiger(CH_PLANCHER, ['travees_m', 'hourdis_cm', 'dalle_compression_cm', 'b0_cm', 'entraxe_cm', 'g_plancher_kn_m2', 'g_sup_kn_m2', 'q_kn_m2']);
+          const payload = { travees_m: lirePortees($('p-trav').value), hourdis_cm: num('p-hourdis'), dalle_compression_cm: num('p-h0'),
+            b0_cm: num('p-b0'), entraxe_cm: num('p-ent'), g_plancher_kn_m2: num('p-gp'), g_sup_kn_m2: num('p-g'), q_kn_m2: num('p-q'),
+            fc28_mpa: num('p-fc', 25), fe_mpa: 500, poutrelle: $('p-type').value };
+          const r = await api('/api/engine/plancher', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          const lignes = r.travees.map((t, i) => `<tr><td>${i + 1}</td><td>${fmt(t.portee_m, 2)}</td><td>${fmt(t.mt_knm, 2)}</td><td>${esc(t.ferraillage.choix)}</td>
+            <td>${esc(t.etriers.choix)}</td><td>${t.fleche.dispense ? 'dispensée' : `${fmt(t.fleche.calcul.delta_ft_mm, 1)} / ${fmt(t.fleche.calcul.f_adm_mm, 1)} mm`}</td></tr>`).join('');
+          const app = r.appuis.map(a => `<tr><td>${a.rive ? 'rive' : a.appui}</td><td>${fmt(a.ma_knm, 2)}</td><td>${esc(a.ferraillage.choix)}</td><td>${fmt(a.longueur_chapeau_m, 2)}</td></tr>`).join('');
+          resEl.innerHTML = VERDICTS.plancher(r) + kv([
+            ['Plancher', `${r.designation} (h = ${r.h_cm} cm), poutrelles tous les ${r.entraxe_cm} cm`],
+            ['Méthode des moments', r.methode, true],
+            ['pu / ps par poutrelle (kN/m)', `${r.charges.pu_kn_m} / ${r.charges.ps_kn_m}`],
+            ['Dalle de compression', r.dalle_compression.choix],
+          ]) + `<table><thead><tr><th>Travée</th><th>l (m)</th><th>Mt (kN·m)</th><th>Aciers bas</th><th>Étriers</th><th>Flèche Δft / adm.</th></tr></thead><tbody>${lignes}</tbody></table>
+<table><thead><tr><th>Appui</th><th>Ma (kN·m)</th><th>Chapeaux</th><th>Longueur (m)</th></tr></thead><tbody>${app}</tbody></table>`
+            + warns(r.remarques) + notes(r.observations) + notes(r.hypotheses) + renderRaw(r);
+          $('p-add').disabled = false;
+          $('p-add').onclick = () => addToSynthesis('planchers', { ...r, nom: $('p-nom').value.trim() || undefined, niveau: $('p-niveau').value.trim() || undefined });
+        } catch (e) { afficherErreur(resEl, e, CH_PLANCHER); }
       });
     }
   };
@@ -935,13 +1022,13 @@ async function loadDemo() {
     for (const p of demo.voiles) state.voiles.push(await api('/api/engine/voile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
     renderSynthesis(); renderCartouche();
     for (const k of ['projet', 'client', 'site', 'indice']) { const f = $('sy-' + k); if (f) f.value = state.project[k]; }
-    resEl.innerHTML = '<p class="ok">Scénario démo chargé : Robot (simulation) + sismique + 1 poteau + 1 poutre + 1 semelle + 1 voile. Générez la note ou le DXF.</p>';
+    resEl.innerHTML = '<p class="ok">Scénario démo chargé : Robot (simulation) + sismique + 1 poteau + 1 poutre + 1 semelle + 1 voile. Générez la note ; le dossier de plans DXF se fait depuis Projet Robot.</p>';
   } catch (e) { afficherErreur(resEl, e, {}, 'Chargement de la démo impossible. '); }
 }
 
 /* ---------- construction des onglets ---------- */
 const builders = { projet: tabProjet, poteau: tabPoteau, sismique: tabSismique, semelle: () => tabSemelle(false),
-  semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile, dalle: tabDalle,
+  semelle_filante: () => tabSemelle(true), poutre: tabPoutre, voile: tabVoile, dalle: tabDalle, plancher: tabPlancher,
   synthese: tabSynthese, bureau: tabBureau, complements: tabComplements };
 
 /* Les totaux montent de 0 à leur valeur quand les résultats arrivent (sauf « animations réduites »). */

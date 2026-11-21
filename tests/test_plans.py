@@ -88,8 +88,9 @@ def test_elements_non_verifies_ne_sont_pas_dessines(simulation):
 def test_dessin_complet_valide(simulation):
     o, lot = simulation
     doc, res = pf.dessiner_plans(lot, PROJET, {"nom": "BET"}, o["trame_x_m"], o["trame_y_m"])
-    assert res["planches"] == ["Plan de fondation", "Ferraillage des semelles", "Ferraillage des poteaux",
-                               "Ferraillage des poutres", "Ferraillage des voiles", "Nomenclature des aciers"]
+    assert [t for t in res["planches"] if not t.startswith("Coffrage")] == [
+        "Plan de fondation", "Ferraillage des semelles", "Ferraillage des poteaux",
+        "Ferraillage des poutres", "Ferraillage des voiles", "Nomenclature des aciers"]
     assert res["elements_dessines"] == 124 and res["elements_non_dessines"] == 0
     assert not doc.audit().has_errors
     msp = doc.modelspace()
@@ -101,6 +102,19 @@ def test_dessin_complet_valide(simulation):
     # chaque planche A1 a son cartouche : le titre de la planche y figure
     for titre in res["planches"]:
         assert textes.count(titre) >= 2                          # titre de planche + cartouche
+    # une présentation (onglet AutoCAD) par planche, dans l'ordre, avec une fenêtre sur sa feuille
+    onglets = doc.layouts.names_in_taborder()
+    assert onglets == ["Model"] + [f"{i:02d} {t}" for i, t in enumerate(res["planches"], start=1)]
+    for i, nom in enumerate(onglets[1:]):
+        vues = [v for v in doc.layouts.get(nom).viewports() if v.dxf.status != 1]
+        assert len(vues) == 1
+        assert vues[0].dxf.view_center_point.x == pytest.approx(i * (pf.A1[0] + pf.ESPACE_FEUILLES) + pf.A1[0] / 2)
+
+
+def test_nom_presentation_sans_caracteres_interdits():
+    nom = pf.nom_presentation(3, 'Coupe A/B : "test"' + "x" * 80)
+    assert nom.startswith("03 Coupe A B") and len(nom) <= 63
+    assert not set('<>/\\":;?*|=`') & set(nom)
 
 
 def test_ecartes_affiches_sur_la_planche(simulation):
@@ -126,3 +140,63 @@ def test_endpoint_plans_et_telechargement(tmp_path, monkeypatch, simulation):
     for nom in ("..\\..\\secret.dxf", "../x.dxf", "note.html", "absent.dxf"):
         with pytest.raises(HTTPException):
             ds.download(nom)
+
+
+# ---------- plans de coffrage par niveau ----------
+def test_positions_sur_la_trame():
+    tx, ty = [0, 6, 12], [0, 5, 10]
+    assert pf._xy_axe("B2", tx, ty) == (6.0, 5.0)          # lettre = file Y, chiffre = file X
+    assert pf._xy_axe("D1", tx, ty) is None                 # hors trame : jamais deviné
+    assert pf._segment({"nom": "Pt A1-A2"}, tx, ty) == (0.0, 0.0, 6.0, 0.0)
+    assert pf._segment({"nom": "Pt 12"}, tx, ty) is None
+    assert pf._segment({"x1_m": 1, "y1_m": 2, "x2_m": 3, "y2_m": 2, "nom": "Pt 12"}, tx, ty) == (1, 2, 3, 2)
+    assert ro.niveau_plancher(0) == "Fondation" and ro.niveau_plancher(1) == "RDC" and ro.niveau_plancher(3) == "R+2"
+
+
+def test_coffrage_un_plan_par_niveau_regroupe(simulation):
+    o, lot = simulation
+    doc, res = pf.dessiner_plans(lot, PROJET, {}, o["trame_x_m"], o["trame_y_m"])
+    assert res["niveaux_dessines"] == ["RDC", "R+1", "R+2", "R+3", "R+4"]       # chaque niveau, une seule fois
+    coffrages = [t for t in res["planches"] if t.startswith("Coffrage")]
+    assert len(coffrages) == res["planches_coffrage"] >= 1
+    assert res["planches"][0] == "Plan de fondation" and res["planches"][1].startswith("Coffrage")
+    assert not doc.audit().has_errors
+    textes = [t.dxf.text for t in doc.modelspace().query("TEXT")]
+    assert any(t.startswith("V1 ép. 18") for t in textes)                      # voiles de pignon placés
+
+
+def test_regroupement_des_niveaux_identiques():
+    p = {"genre": "poteau", "x": 0.0, "y": 0.0, "a": 30, "b": 30, "code": "P1", "verifie": True}
+    q = {**p, "a": 40, "b": 40, "code": "P2"}
+    from collections import OrderedDict
+    g = pf.regrouper_niveaux(OrderedDict([("RDC", [q]), ("R+1", [p]), ("R+2", [dict(p)]), ("R+3", []), ("R+4", [p])]))
+    assert [n for n, _ in g] == [["RDC"], ["R+1", "R+2"], ["R+4"]]               # un niveau vide coupe le groupe
+    assert pf.titre_coffrage(["R+1", "R+2"]) == "Coffrage plancher haut R+1 à R+2"
+    assert pf.titre_coffrage(["Fondation"]) == "Coffrage niveau fondation"
+
+
+def test_elements_sans_position_signales_et_dalles_dessinees(simulation):
+    o, lot = simulation
+    lot2 = {**lot, "poutres": [dict(l) for l in lot["poutres"]]}
+    l0 = lot2["poutres"][0]
+    l0["entree"] = {k: v for k, v in l0["entree"].items() if not k.startswith(("x1", "y1", "x2", "y2"))} | {"nom": "Pt 999"}
+    dalles = [{"nom": "D 7", "niveau": "R+1", "type": "dalle", "h_cm": 16,
+               "xmin_m": 0, "xmax_m": 6, "ymin_m": 0, "ymax_m": 5}]
+    doc, res = pf.dessiner_plans(lot2, PROJET, {}, o["trame_x_m"], o["trame_y_m"], dalles)
+    textes = [t.dxf.text for t in doc.modelspace().query("TEXT")]
+    assert any("— position inconnue" in t for t in textes)
+    assert "D 7 — dalle h = 16 cm" in textes
+
+
+def test_altitudes_pour_la_vue_3d():
+    """Chaque élément de la simulation porte son altitude : poteau et voile en pied, poutre au plancher qu'elle porte."""
+    o = ro.ossature_simulation()
+    h = 3.0
+    for p in o["poteaux"]:
+        niv = 0 if p["niveau"] == "RDC" else int(p["niveau"][2:])
+        assert p["z_m"] == pytest.approx(niv * h)
+    for b in o["poutres"]:
+        niv = 0 if b["niveau"] == "RDC" else int(b["niveau"][2:])
+        assert b["z_m"] == pytest.approx((niv + 1) * h)
+    assert all(v["z_m"] is not None and v["hauteur_m"] == h for v in o["voiles"])
+    assert all(s["z_m"] == 0.0 for s in o["semelles"])

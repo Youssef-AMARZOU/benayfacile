@@ -21,6 +21,7 @@ import ezdxf
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.units import MM
 
+from common import lettre_file
 from plans_ferraillage import dessiner_plans
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -154,7 +155,7 @@ def dessiner(inp: DxfInput) -> pathlib.Path:
         msp.add_line((gx0 - 6, py), (gx0 + lx + 6, py),
                      dxfattribs={"layer": "AXES", "linetype": "DASHED"})
         msp.add_circle((gx0 - 10, py), 3.2, dxfattribs={"layer": "AXES"})
-        msp.add_text(chr(65 + j), dxfattribs={"layer": "AXES", "height": 3.0,
+        msp.add_text(lettre_file(j), dxfattribs={"layer": "AXES", "height": 3.0,
                                               "insert": (gx0 - 10, py - 1.1), "halign": 1})
 
     # cotes globales (jaune)
@@ -264,6 +265,8 @@ class PlansInput(BaseModel):
     lot: dict                          # réponse de POST /lot (moteur)
     trame_x_m: List[float] = []
     trame_y_m: List[float] = []
+    dalles: List[dict] = []            # panneaux lus dans Robot (géométrie en plan), pour les plans de coffrage
+    regroupement: str = "type"         # « type » : un détail par type (dossier d'exécution) ; « element » : un par élément
     bureau: Optional[dict] = None
 
 
@@ -276,7 +279,8 @@ def _slug(texte: str) -> str:
 def plans(inp: PlansInput):
     """Dossier de plans de ferraillage de tout le modèle (un DXF, plusieurs planches A1)."""
     projet = {"projet": inp.projet, "client": inp.client, "site": inp.site, "indice": inp.indice}
-    doc, resume = dessiner_plans(inp.lot, projet, lire_bureau(inp.bureau), inp.trame_x_m, inp.trame_y_m)
+    doc, resume = dessiner_plans(inp.lot, projet, lire_bureau(inp.bureau), inp.trame_x_m, inp.trame_y_m, inp.dalles,
+                                 par_element=inp.regroupement == "element")
     now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin = OUT / f"Plans_Ferraillage_{_slug(inp.projet)}_{now}.dxf"
     doc.saveas(chemin)

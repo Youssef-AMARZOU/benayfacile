@@ -46,7 +46,7 @@ const EN = new Map(Object.entries({
   "Importer un classeur Excel": "Import an Excel workbook",
   "Sans Robot :": "Without Robot:",
   "Compléments": "Add-ons",
-  "Dalles et balcons": "Slabs and balconies",
+  "Dalles et balcons": "Slabs and balconies", "Planchers à corps creux": "Hollow-block floors",
   "Dalle pleine": "Solid slab",
   "Balcon en porte-à-faux": "Cantilever balcony",
   "Calculer la dalle": "Calculate the slab",
