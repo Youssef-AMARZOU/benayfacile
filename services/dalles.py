@@ -40,11 +40,12 @@ def section_bar(d_mm: float) -> float:
 # ───────────────────────── règles de ferraillage des dalles ─────────────────────────
 
 def espacements_max_cm(h_cm: float, fissuration: str) -> Dict[str, float]:
-    """A.8.2,42 : espacements maximaux (sens porteur principal / sens de répartition)."""
+    """A.8.2,42 : espacements maximaux (sens porteur principal / sens de répartition).
+    Fissuration préjudiciable : min(2h ; 25 cm), très préjudiciable : min(1,5h ; 20 cm), dans les deux directions."""
     if fissuration == "prejudiciable":
-        return {"principal": min(2 * h_cm, 25.0), "repartition": min(3 * h_cm, 33.0)}
+        return {"principal": min(2 * h_cm, 25.0), "repartition": min(2 * h_cm, 25.0)}
     if fissuration == "tres_prejudiciable":
-        return {"principal": min(1.5 * h_cm, 20.0), "repartition": min(2 * h_cm, 25.0)}
+        return {"principal": min(1.5 * h_cm, 20.0), "repartition": min(1.5 * h_cm, 20.0)}
     return {"principal": min(3 * h_cm, 33.0), "repartition": min(4 * h_cm, 45.0)}
 
 
@@ -240,6 +241,16 @@ def dalle(inp: DalleInput) -> dict:
         manquees = ", ".join(c["nom"] for c in fleche["conditions"] if not c["ok"])
         remarques.append(f"Flèche : condition de dispense non satisfaite ({fleche['article']} : {manquees}) ; "
                          "calculez la flèche (B.6.5,2) ou augmentez l'épaisseur.")
+    from common import audit_ligne
+    fsu = e.sigma_s_elu(inp.fe_mpa)
+    xt = resultats["x_travee"]
+    audit = [
+        audit_ligne("pu = 1,35 g + 1,5 q", 1.35 * g + 1.5 * inp.q_kn_m2, round(pu, 3), 0.001),
+        audit_ligne("M0x = μx pu lx²" if not un_sens else "M0x = pu lx² / 8",
+                    round(mu_x, 4) * pu * lx ** 2 if not un_sens else pu * lx ** 2 / 8, round(m0x, 2), 0.02),
+        audit_ligne("Mtx = kt M0x", k["travee"] * round(m0x, 2), xt["m_elu_knm"], 0.02),
+        audit_ligne("As = Mtx / (Z fsu)", xt["m_elu_knm"] * 1e3 / (xt["z_m"] * fsu * 1e6) * 1e4, xt["as_elu_cm2_m"], 0.02),
+    ]
     return {
         "type": "dalle", "un_sens": un_sens, "rho": round(rho, 3), "lx_m": lx, "ly_m": ly, "h_cm": h,
         "charges": {"g_poids_propre_kn_m2": round(gpp, 2), "g_kn_m2": round(g, 2), "q_kn_m2": inp.q_kn_m2,
@@ -247,7 +258,7 @@ def dalle(inp: DalleInput) -> dict:
         "mu_x": round(mu_x, 4), "mu_y": round(mu_y, 4), "m0x_knm": round(m0x, 2), "m0y_knm": round(m0y, 2),
         "continuite": inp.continuite, "coefficients": {"travee": k["travee"], "appui": k["appui"]},
         "espacements_max_cm": st, "resultats": resultats, "cisaillement": cisaillement, "fleche": fleche,
-        "verifie": not remarques,
+        "verifie": not remarques, "audit": audit,
         "remarques": remarques,
         "hypotheses": ["Moments ELS pris proportionnels aux moments ELU (coefficients μ à ν = 0) : approché, à vérifier.",
                        "Panneau rectangulaire uniformément chargé, sans ouverture ni charge concentrée."],
@@ -321,6 +332,14 @@ def balcon(inp: BalconInput) -> dict:
         "Sans dalle intérieure au même niveau (décaissé, trémie, escalier) : ancrer dans une poutre calculée en torsion.",
         "Bord libre : U de rive ; goutte d'eau ; pente ≥ 1 % vers l'extérieur et étanchéité relevée.",
     ]
+    from common import audit_ligne
+    fsu = e.sigma_s_elu(inp.fe_mpa)
+    audit = [
+        audit_ligne("Mu = 1,35 (g l²/2 + P l) + 1,5 (q l²/2 + H hg)",
+                    1.35 * (g * l ** 2 / 2 + P * l) + 1.5 * (q * l ** 2 / 2 + H * hg), round(mu, 2), 0.01),
+        audit_ligne("Vu = 1,35 (g l + P) + 1,5 q l", 1.35 * (g * l + P) + 1.5 * q * l, round(vu, 2), 0.01),
+        audit_ligne("As = Mu / (Z fsu)", round(mu, 2) * 1e3 / (sup["z_m"] * fsu * 1e6) * 1e4, sup["as_elu_cm2_m"], 0.02),
+    ]
     return {
         "type": "balcon", "longueur_m": l, "h_cm": h, "d_m": round(d, 3),
         "charges": {"g_poids_propre_kn_m2": round(gpp, 2), "g_kn_m2": round(g, 2), "q_kn_m2": q,
@@ -330,7 +349,7 @@ def balcon(inp: BalconInput) -> dict:
         "cisaillement": {"tau_u_mpa": round(tau, 3), "tau_lim_mpa": round(tau_lim, 2), "ok": bool(tau <= tau_lim)},
         "ls_m": round(ls, 2), "prolongement_chapeaux_m": round(prolongement, 2),
         "espacements_max_cm": st, "dispositions": dispositions, "fleche": fleche,
-        "verifie": not remarques,
+        "verifie": not remarques, "audit": audit,
         "remarques": remarques,
         "hypotheses": ["Console encastrée sur toute sa largeur, bande de 1 m ; charges uniformes.",
                        "Flèche : conditions de dispense B.6.5,1 vérifiées ; si elles ne le sont pas, la flèche est à calculer."],

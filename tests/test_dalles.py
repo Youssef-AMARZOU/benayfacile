@@ -181,3 +181,18 @@ def test_note_section_dalles_et_balcons():
 def test_note_sans_dalle_ni_balcon():
     import note_calcul as nc
     assert "Aucune dalle ni aucun balcon calculé." in nc.construire({"projet": "Vide"}, {})
+
+
+def test_espacements_fissuration_prejudiciable_deux_directions():
+    # A.8.2,42 : h = 16 cm → préjudiciable min(32 ; 25) = 25 cm, très préjudiciable min(24 ; 20) = 20 cm, dans les deux sens
+    assert D.espacements_max_cm(16, "prejudiciable") == {"principal": 25.0, "repartition": 25.0}
+    assert D.espacements_max_cm(12, "tres_prejudiciable") == {"principal": 18.0, "repartition": 18.0}
+    assert D.espacements_max_cm(16, "peu_prejudiciable") == {"principal": 33.0, "repartition": 45.0}
+
+
+def test_audit_arithmetique_dalle_et_balcon():
+    d = D.dalle(D.DalleInput(lx_m=4, ly_m=5, h_cm=16, g_sup_kn_m2=1.5, q_kn_m2=1.5))
+    b = D.balcon(D.BalconInput(longueur_m=1.5, h_cm=18, g_sup_kn_m2=1.5, q_kn_m2=3.5, garde_corps_kn_m=1.0))
+    for r in (d, b):
+        assert len(r["audit"]) >= 3
+        assert all(a["statut"] == "OK" for a in r["audit"])

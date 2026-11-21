@@ -99,13 +99,13 @@
       },
       "prejudiciable": {
         "principal": "min(2 h, 25)",
-        "repartition": "min(3 h, 33)"
+        "repartition": "min(2 h, 25)"
       },
       "tres_prejudiciable": {
         "principal": "min(1,5 h, 20)",
-        "repartition": "min(2 h, 25)"
+        "repartition": "min(1,5 h, 20)"
       },
-      "_source": "A.8.2,42 (charges réparties ; h en cm) — valeurs préjudiciable / très préjudiciable : pratique BET (à vérifier)"
+      "_source": "A.8.2,42 (charges réparties ; h en cm) : en fissuration préjudiciable et très préjudiciable, la même limite s'applique dans les deux directions"
     },
     "diametre_max": {
       "formule": "Ø ≤ h / 10",
@@ -217,7 +217,7 @@
     "fleche_calcul": {
       "formule": "Δft = fgv − fji + fpi − fgi ; f = M l² / (10 E If) ; Ifi = 1,1 I0 / (1 + λi μ) ; Ifv = 1,1 I0 / (1 + λv μ)",
       "lambda": "λi = 0,05 ft28 / (ρ (2 + 3 b0/b)) ; λv = 0,4 λi ; μ = max(0 ; 1 − 1,75 ft28 / (4 ρ σs + ft28)) ; ρ = A/(b0 d)",
-      "modules": "Ei = 11 000 fc28^(1/3) ; Ev = Ei / 3 (MPa)",
+      "modules": "Ei = 11 000 fc28^(1/3) ; Ev = 3 700 fc28^(1/3) (MPa, A.2.1,21 et A.2.1,22)",
       "admissible": "l/500 si l ≤ 5 m ; 0,5 cm + l/1000 sinon",
       "charges": "j : poids propre du plancher seul (pose des cloisons) ; g : G total ; p : G + Q",
       "_source": "B.6.5,2 et commentaires (méthode de l'inertie fissurée) (à vérifier)"

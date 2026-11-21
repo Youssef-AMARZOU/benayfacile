@@ -129,3 +129,24 @@ def test_note_section_planchers():
         xml.dom.minidom.parseString(f)
     assert "Plancher PL2" in html.split("Réserves.")[1]
     assert "Aucun plancher à corps creux calculé." in nc.construire({"projet": "Vide"}, {})
+
+
+def test_audit_arithmetique_et_module_differe():
+    r = P.plancher(P.PlancherInput(travees_m=[4, 4], **BASE))
+    # pu + (M0, As) par travée
+    assert len(r["audit"]) == 5 and all(a["statut"] == "OK" for a in r["audit"])
+    # Ev = 3 700 fc28^(1/3) (A.2.1,22), et non Ei / 3
+    import inspect
+    assert "3700.0 * fc28 ** (1 / 3)" in inspect.getsource(P.fleche_calculee)
+    ref = json.loads((RACINE / "referentiels" / "bael.json").read_text(encoding="utf-8"))
+    assert "3 700" in json.dumps(ref["planchers_corps_creux"], ensure_ascii=False)
+
+
+def test_note_bilan_audit_et_alerte():
+    import note_calcul as nc
+    r = P.plancher(P.PlancherInput(travees_m=[4, 4], **BASE))
+    html = nc.construire({"projet": "Test", "planchers": [{**r, "nom": "PL1"}]}, {})
+    assert "Contrôle arithmétique : 5 lignes" in html and "toutes sont conformes" in html
+    faux = {**r, "nom": "PL2", "audit": r["audit"] + [{"ligne": "M0 faux", "statut": "ALERTE ECART ARITHMETIQUE", "ecart": 1.2}]}
+    html = nc.construire({"projet": "Test", "planchers": [faux]}, {})
+    assert "ALERTE ECART ARITHMETIQUE" in html and "M0 faux" in html

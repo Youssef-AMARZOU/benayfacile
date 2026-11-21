@@ -988,7 +988,21 @@ def conclusion(inp: dict, bur: dict, date: str) -> str:
         for i, e in enumerate(inp.get(fam) or []):
             if not verif(e):
                 reserves.append(f"{nom} {_nom(e, i, nom[0])}")
+    lignes_audit, alertes = 0, []
+    for fam, nom in (("poteaux", "Poteau"), ("poutres", "Poutre"), ("semelles_isolees", "Semelle"), ("voiles", "Voile"),
+                     ("dalles", "Dalle"), ("balcons", "Balcon"), ("planchers", "Plancher")):
+        for i, e in enumerate(inp.get(fam) or []):
+            for a in e.get("audit") or []:
+                lignes_audit += 1
+                if a.get("statut") != "OK":
+                    alertes.append(f"{nom} {_nom(e, i, nom[0])} : {a.get('ligne')} (écart {a.get('ecart')})")
     out = ['<div class="conclusion">', h2(8, "s8", "Conclusion, réserves et visas")]
+    if alertes:
+        out.append('<div class="reserve"><b>ALERTE ECART ARITHMETIQUE.</b> Le recalcul indépendant ne retrouve pas les '
+                   f"valeurs suivantes : {esc(' ; '.join(alertes))}. Ces résultats ne doivent pas être utilisés avant correction.</div>")
+    if lignes_audit:
+        out.append(f"<p>Contrôle arithmétique : {lignes_audit} lignes de calcul ont été recalculées indépendamment ; "
+                   + ("toutes sont conformes.</p>" if not alertes else f"{len(alertes)} présentent un écart (voir ci-dessus).</p>"))
     if reserves:
         out.append('<div class="reserve"><b>Réserves.</b> Les éléments suivants ne sont pas vérifiés ; ils devront être '
                    f"redimensionnés avant l'établissement des plans d'exécution : {esc(liste_noms(reserves, 20))}.</div>")

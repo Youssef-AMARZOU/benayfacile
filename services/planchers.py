@@ -228,7 +228,7 @@ def fleche_calculee(l_m: float, m_j: float, m_g: float, m_p: float, b: float, b0
                     d_m: float, as_cm2: float, fc28: float) -> dict:
     """B.6.5,2 : flèche totale Δft = fgv − fji + fpi − fgi, comparée à l/500 (l ≤ 5 m) ou 0,5 cm + l/1000.
     Moments de service en kN·m : j (poids propre du plancher seul, à la pose des cloisons), g (G total), p (G + Q).
-    Inerties fissurées Ifi = 1,1 I0 / (1 + λi μ), Ifv = 1,1 I0 / (1 + λv μ) ; Ei = 11 000 fc28^(1/3), Ev = Ei / 3."""
+    Inerties fissurées Ifi = 1,1 I0 / (1 + λi μ), Ifv = 1,1 I0 / (1 + λv μ) ; Ei = 11 000 fc28^(1/3), Ev = 3 700 fc28^(1/3)."""
     e = _e()
     ft = e.ft28(fc28)
     bb, bb0, hh, hh0, a = b / 100.0, b0 / 100.0, h / 100.0, h0 / 100.0, as_cm2 / 1e4
@@ -241,7 +241,7 @@ def fleche_calculee(l_m: float, m_j: float, m_g: float, m_p: float, b: float, b0
     lam_i = 0.05 * ft / (rho * (2 + 3 * bb0 / bb))
     lam_v = 0.4 * lam_i
     ei = 11000.0 * fc28 ** (1 / 3) * 1e6
-    ev = ei / 3.0
+    ev = 3700.0 * fc28 ** (1 / 3) * 1e6                             # A.2.1,22
 
     def etat(m):
         sst = els_T(m, b, b0, h0, d_m, as_cm2, fc28, 500.0, "peu_prejudiciable")["sigma_st_mpa"]
@@ -451,6 +451,15 @@ def plancher(inp: PlancherInput) -> dict:
         observations.append(f"Ø étriers {inp.etrier_mm:g} mm > min(h/35 ; b0/10) = {phi_t_max:.1f} mm (A.7.2,2).")
     if h0 < ref["h0_min_cm"]:
         remarques.append(f"Dalle de compression h0 = {h0:g} cm < {ref['h0_min_cm']:g} cm.")
+    from common import audit_ligne
+    fsu = e.sigma_s_elu(fe)
+    audit = [audit_ligne("pu = 1,35 g + 1,5 q (par poutrelle)", 1.35 * g_l + 1.5 * q_l, round(pu, 3), 0.001)]
+    for i, t in enumerate(travees):
+        audit.append(audit_ligne(f"Travée {i + 1} : M0 = pu l² / 8", round(pu, 3) * t["portee_m"] ** 2 / 8, t["m0_knm"], 0.02))
+        if t["elu"]["cas"].startswith("table seule"):
+            audit.append(audit_ligne(f"Travée {i + 1} : As = Mt / (Z fsu)",
+                                     t["mt_knm"] * 1e3 / (d * (1 - 0.4 * 1.25 * (1 - math.sqrt(1 - 2 * t["elu"]["mu"]))) * fsu * 1e6) * 1e4,
+                                     t["elu"]["as_elu_cm2"], 0.02))
     designation = f"{inp.hourdis_cm:g}+{h0:g}"
     return {
         "type": "plancher", "designation": designation, "h_cm": h, "h0_cm": h0, "b0_cm": b0, "entraxe_cm": ent,
@@ -461,7 +470,7 @@ def plancher(inp: PlancherInput) -> dict:
         "travees": travees, "appuis": appuis, "dalle_compression": ts,
         "predimensionnement": {"h_min_cm": round(max(trav) * 100.0 / ref["fleche"]["h_sur_l_min_inverse"], 1),
                                "ok": bool(h >= max(trav) * 100.0 / ref["fleche"]["h_sur_l_min_inverse"])},
-        "verifie": not remarques, "remarques": remarques, "observations": observations,
+        "verifie": not remarques, "audit": audit, "remarques": remarques, "observations": observations,
         "hypotheses": [
             f"Poutrelle en T : nervure b0 = {b0:g} cm, table h0 = {h0:g} cm, entraxe {ent:g} cm (valeurs saisies).",
             "Poids propre du plancher saisi d'après la documentation du fabricant des hourdis.",
