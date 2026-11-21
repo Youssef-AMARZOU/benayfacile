@@ -344,10 +344,14 @@ def _table(ws, r: int, entetes: Sequence[str], rangs: Sequence[Sequence], format
 
 
 def feuilles_metre(wb: Workbook, lot: dict, projet: dict) -> dict:
-    """Feuilles « Métré détaillé » (une ligne par élément) et « Récapitulatif métré »."""
+    """Feuilles « Métré poteaux », « Métré poutres »… (une ligne par élément) et « Récapitulatif métré »."""
     from metre import metre
     m = metre(lot)
-    _feuille(wb, "Métré détaillé", "béton et acier par élément", METRE, m["lignes"], projet)
+    for fam, titre in (("poteaux", "poteaux"), ("poutres", "poutres"), ("semelles", "semelles"), ("voiles", "voiles")):
+        ls = [l for l in m["lignes"] if l["famille"] == fam]
+        if ls:
+            ws_f = _feuille(wb, f"Métré {titre}", "béton et acier par élément", METRE[1:], ls, projet)
+            ws_f["A2"] = f"Métré détaillé des {titre} — béton et acier"
 
     ws = wb.create_sheet("Récapitulatif métré")
     _entete(ws, projet, "Récapitulatif du métré", "béton et acier", 7)

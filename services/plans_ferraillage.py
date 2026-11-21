@@ -37,6 +37,8 @@ import ezdxf
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.units import MM
 
+from common import indice_file, lettre_file, rang_niveau
+
 # ───────────────────────── aciers ─────────────────────────
 
 def section_cm2(d_mm: float) -> float:
@@ -120,8 +122,9 @@ CLES = {"poteaux": ("P", _cle_poteau), "poutres": ("Pt", _cle_poutre),
         "semelles": ("S", _cle_semelle), "voiles": ("V", _cle_voile)}
 
 
-def grouper(lot: dict) -> Tuple[Dict[str, List[dict]], List[dict]]:
-    """Types par famille (éléments vérifiés) et liste des éléments non dessinés."""
+def grouper(lot: dict, par_element: bool = False) -> Tuple[Dict[str, List[dict]], List[dict]]:
+    """Types par famille (éléments vérifiés) et liste des éléments non dessinés.
+    par_element : un « type » par élément (un détail dessiné pour chaque élément, au lieu d'un par type)."""
     types, ecartes = {}, []
     for fam, (prefixe, cle) in CLES.items():
         groupes: "OrderedDict[tuple, dict]" = OrderedDict()
@@ -132,6 +135,8 @@ def grouper(lot: dict) -> Tuple[Dict[str, List[dict]], List[dict]]:
                 continue
             try:
                 k = cle(l)
+                if par_element:
+                    k = (id(l),)
             except (KeyError, TypeError):
                 ecartes.append({"famille": fam, "nom": l.get("nom"), "niveau": l.get("niveau"),
                                 "statut": "incomplet", "raison": "données de dessin manquantes"})
@@ -206,9 +211,9 @@ def positions_type(fam: str, t: dict, mat: dict, poteaux_rdc: Dict[str, dict]) -
     return []
 
 
-def nomenclature(lot: dict) -> dict:
+def nomenclature(lot: dict, par_element: bool = False) -> dict:
     """Types, positions et poids : la partie « calcul » des plans (sans dessin)."""
-    types, ecartes = grouper(lot)
+    types, ecartes = grouper(lot, par_element)
     mat = lot.get("materiaux") or {}
     poteaux_rdc = {l.get("axe"): l for l in lot.get("poteaux") or []
                    if l.get("niveau") == "RDC" and l.get("resultat")}
@@ -609,7 +614,7 @@ def plan_fondation(D: Dessin, types: Dict[str, List[dict]], trame_x: Sequence[fl
         py = gy + (yv - trame_y[0]) * k
         D.ligne((gx - 15, py), (gx + lx + 15, py), "AXES", 13, "DASHDOT")
         D.msp.add_circle((gx - 21, py), 4.5, dxfattribs={"layer": "AXES"})
-        D.texte(chr(65 + j), gx - 21, py, 3.8, MC, "AXES")
+        D.texte(lettre_file(j), gx - 21, py, 3.8, MC, "AXES")
     for i in range(len(trame_x) - 1):
         x1, x2 = gx + (trame_x[i] - trame_x[0]) * k, gx + (trame_x[i + 1] - trame_x[0]) * k
         D.cote((x1, gy - 18), (x2, gy - 18), f"{trame_x[i + 1] - trame_x[i]:.2f}", 4)
@@ -621,10 +626,10 @@ def plan_fondation(D: Dessin, types: Dict[str, List[dict]], trame_x: Sequence[fl
         r = t["rep"]["resultat"]
         for l in t["lignes"]:
             axe = l.get("axe") or ""
-            m = re.match(r"([A-Z])(\d+)$", axe)
+            m = re.match(r"([A-Z]+)(\d+)$", axe)
             if not m:
                 continue
-            j, i = ord(m.group(1)) - 65, int(m.group(2)) - 1
+            j, i = indice_file(m.group(1)), int(m.group(2)) - 1
             if i >= len(trame_x) or j >= len(trame_y):
                 continue
             cx, cy = gx + (trame_x[i] - trame_x[0]) * k, gy + (trame_y[j] - trame_y[0]) * k
@@ -694,10 +699,10 @@ def planche_nomenclature(D: Dessin, nomen: dict):
 
 def _xy_axe(axe: Optional[str], trame_x: Sequence[float], trame_y: Sequence[float]) -> Optional[Tuple[float, float]]:
     """Repère « B2 » → (x, y) sur la trame (lettre = file en Y, chiffre = file en X)."""
-    m = re.match(r"([A-Z])(\d+)$", axe or "")
+    m = re.match(r"([A-Z]+)(\d+)$", axe or "")
     if not m:
         return None
-    j, i = ord(m.group(1)) - 65, int(m.group(2)) - 1
+    j, i = indice_file(m.group(1)), int(m.group(2)) - 1
     if i >= len(trame_x) or j >= len(trame_y):
         return None
     return float(trame_x[i]), float(trame_y[j])
@@ -707,7 +712,7 @@ def _segment(e: dict, trame_x, trame_y) -> Optional[Tuple[float, float, float, f
     """Extrémités en plan d'une poutre ou d'un voile : coordonnées lues, sinon nom « Pt A1-A2 » sur la trame."""
     if all(e.get(k) is not None for k in ("x1_m", "y1_m", "x2_m", "y2_m")):
         return float(e["x1_m"]), float(e["y1_m"]), float(e["x2_m"]), float(e["y2_m"])
-    m = re.search(r"([A-Z]\d+)-([A-Z]\d+)$", e.get("nom") or "")
+    m = re.search(r"([A-Z]+\d+)-([A-Z]+\d+)$", e.get("nom") or "")
     if m:
         a, b = _xy_axe(m.group(1), trame_x, trame_y), _xy_axe(m.group(2), trame_x, trame_y)
         if a and b:
@@ -732,9 +737,7 @@ def elements_niveau(lot: dict, dalles: Sequence[dict], trame_x, trame_y,
     for d in dalles:
         if d.get("niveau") and d["niveau"] not in ordre:
             ordre.append(d["niveau"])
-    if "Fondation" in ordre:
-        ordre.remove("Fondation")
-        ordre.insert(0, "Fondation")
+    ordre.sort(key=rang_niveau)                      # de bas en haut, quel que soit l'ordre des barres dans Robot
     par_niveau: "OrderedDict[str, List[dict]]" = OrderedDict((n, []) for n in ordre)
     sans_position: List[dict] = []
 
@@ -801,7 +804,11 @@ def titre_coffrage(niveaux: List[str]) -> str:
     return f"Coffrage plancher haut {nom}"
 
 
-def planche_coffrage(D: Dessin, niveaux: List[str], els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float]):
+DISPO_PLAN = (A1[0] - 2 * MARGE - 230 - 80, A1[1] - 2 * MARGE - 40 - 70)   # zone de dessin d'une planche (mm)
+ECHELLE_MAX_COFFRAGE = 100        # au-delà, le plan est découpé en parties plutôt que réduit (lisibilité des sections)
+
+
+def _etendue(els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float]) -> Tuple[float, float, float, float]:
     xs = list(trame_x) + [el["x"] for el in els if "x" in el]
     ys = list(trame_y) + [el["y"] for el in els if "y" in el]
     for el in els:
@@ -809,14 +816,80 @@ def planche_coffrage(D: Dessin, niveaux: List[str], els: List[dict], trame_x: Se
             xs += [el["seg"][0], el["seg"][2]]; ys += [el["seg"][1], el["seg"][3]]
         if "box" in el:
             xs += [el["box"][0], el["box"][2]]; ys += [el["box"][1], el["box"][3]]
-    ox, oy = min(xs), min(ys)
-    ex, ey = (max(xs) - ox) or 1.0, (max(ys) - oy) or 1.0
-    dispo_l, dispo_h = A1[0] - 2 * MARGE - 230 - 80, A1[1] - 2 * MARGE - 40 - 70
-    ech = next((e for e in (50, 100, 200, 500) if ex * 1000 / e <= dispo_l and ey * 1000 / e <= dispo_h), 500)
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _dans(el: dict, f: Tuple[float, float, float, float], tol: float = 0.05) -> bool:
+    """L'élément touche la fenêtre (x0, x1, y0, y1) : il est dessiné sur cette partie."""
+    x0, x1, y0, y1 = f
+    if "x" in el:
+        pts = [(el["x"], el["y"])]
+    elif "seg" in el:
+        a, b, c, d = el["seg"]
+        if max(a, c) < x0 - tol or min(a, c) > x1 + tol or max(b, d) < y0 - tol or min(b, d) > y1 + tol:
+            return False
+        return True
+    else:
+        a, b, c, d = el["box"]
+        return not (c < x0 - tol or a > x1 + tol or d < y0 - tol or b > y1 + tol)
+    return all(x0 - tol <= x <= x1 + tol and y0 - tol <= y <= y1 + tol for x, y in pts)
+
+
+def decouper_plan(els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float]) -> Tuple[int, List[tuple]]:
+    """Échelle et fenêtres du plan. Le plan tient sur une planche jusqu'au 1:100 ; sinon il est découpé
+    en parties suivant sa plus grande dimension, aux files de la trame les plus proches (repères conservés)."""
+    x0, x1, y0, y1 = _etendue(els, trame_x, trame_y)
+    ex, ey = (x1 - x0) or 1.0, (y1 - y0) or 1.0
+    dl, dh = DISPO_PLAN
+    for ech in (50, ECHELLE_MAX_COFFRAGE):
+        if ex * 1000 / ech <= dl and ey * 1000 / ech <= dh:
+            return ech, [(x0, x1, y0, y1)]
+    ech = ECHELLE_MAX_COFFRAGE
+    if ey * 1000 / ech > dh and ey / dh >= ex / dl:          # découpe suivant Y
+        n = math.ceil(ey * 1000 / ech / dh)
+        coupes = _coupes(y0, y1, n, trame_y)
+        if ex * 1000 / ech > dl:                              # trop large aussi : échelle 1:200
+            ech = 200
+        return ech, [(x0, x1, a, b) for a, b in zip(coupes, coupes[1:])]
+    n = math.ceil(ex * 1000 / ech / dl)
+    coupes = _coupes(x0, x1, n, trame_x)
+    if ey * 1000 / ech > dh:
+        ech = 200
+    return ech, [(a, b, y0, y1) for a, b in zip(coupes, coupes[1:])]
+
+
+def _coupes(a: float, b: float, n: int, files: Sequence[float]) -> List[float]:
+    """n parties égales entre a et b, chaque coupe ramenée sur la file la plus proche."""
+    coupes = [a]
+    for k in range(1, n):
+        v = a + (b - a) * k / n
+        v = min(files, key=lambda f: abs(f - v)) if files else v
+        if coupes[-1] < v < b:
+            coupes.append(v)
+    return coupes + [b]
+
+
+def planche_coffrage(D: Dessin, niveaux: List[str], els: List[dict], trame_x: Sequence[float], trame_y: Sequence[float],
+                     ech: Optional[int] = None, fenetre: Optional[tuple] = None, partie: Optional[Tuple[int, int]] = None):
+    if fenetre is None:
+        ech, fen = decouper_plan(els, trame_x, trame_y)
+        fenetre = fen[0]
+    fx0, fx1, fy0, fy1 = fenetre
+    tol = 0.05
+    # files visibles sur cette partie, avec leur repère d'origine
+    ax_x = [(i, v) for i, v in enumerate(trame_x) if fx0 - tol <= v <= fx1 + tol]
+    ax_y = [(j, v) for j, v in enumerate(trame_y) if fy0 - tol <= v <= fy1 + tol]
+    trame_x, trame_y = [v for _, v in ax_x], [v for _, v in ax_y]
+    ox, x1_, oy, y1_ = _etendue(els, trame_x, trame_y)
+    ex, ey = (x1_ - ox) or 1.0, (y1_ - oy) or 1.0
+    dispo_l, dispo_h = DISPO_PLAN
     k = 1000.0 / ech
     sous = (f"Niveaux {', '.join(niveaux)} identiques — " if len(niveaux) > 1 else "") + \
         f"poteaux et voiles coupés, poutres en tireté — échelle 1:{ech} — cotes en mètres"
-    P = Planche(D, titre_coffrage(niveaux), sous, (0, 0))
+    titre = titre_coffrage(niveaux) + (f" — partie {partie[0]}/{partie[1]}" if partie and partie[1] > 1 else "")
+    if partie and partie[1] > 1:
+        sous = f"Files {ax_x[0][0] + 1}-{ax_x[-1][0] + 1} / {lettre_file(ax_y[0][0])}-{lettre_file(ax_y[-1][0])} — " + sous
+    P = Planche(D, titre, sous, (0, 0))
     gx = P.x0 + MARGE + 40 + (dispo_l - ex * k) / 2
     gy = P.y0 + MARGE + 45 + (dispo_h - ey * k) / 2
 
@@ -827,16 +900,16 @@ def planche_coffrage(D: Dessin, niveaux: List[str], els: List[dict], trame_x: Se
     if trame_x and trame_y:
         _, yb = pt(0, min(trame_y)); _, yh = pt(0, max(trame_y))
         xg, _ = pt(min(trame_x), 0); xd, _ = pt(max(trame_x), 0)
-        for i, xv in enumerate(trame_x):
+        for i, xv in ax_x:
             px, _ = pt(xv, 0)
             D.ligne((px, yb - 15), (px, yh + 15), "AXES", 13, "DASHDOT")
             D.msp.add_circle((px, yh + 21), 4.5, dxfattribs={"layer": "AXES"})
             D.texte(str(i + 1), px, yh + 21, 3.8, MC, "AXES")
-        for j, yv in enumerate(trame_y):
+        for j, yv in ax_y:
             _, py = pt(0, yv)
             D.ligne((xg - 15, py), (xd + 15, py), "AXES", 13, "DASHDOT")
             D.msp.add_circle((xg - 21, py), 4.5, dxfattribs={"layer": "AXES"})
-            D.texte(chr(65 + j), xg - 21, py, 3.8, MC, "AXES")
+            D.texte(lettre_file(j), xg - 21, py, 3.8, MC, "AXES")
         for i in range(len(trame_x) - 1):
             D.cote((pt(trame_x[i], 0)[0], yb - 18), (pt(trame_x[i + 1], 0)[0], yb - 18), f"{trame_x[i + 1] - trame_x[i]:.2f}", 4)
         for j in range(len(trame_y) - 1):
@@ -918,9 +991,12 @@ def planches_coffrage(D: Dessin, lot: dict, types: Dict[str, List[dict]], dalles
     par_niveau, sans_position = elements_niveau(lot, dalles, list(trame_x), list(trame_y), codes)
     groupes = regrouper_niveaux(par_niveau)
     for i, (niveaux, els) in enumerate(groupes):
-        P = planche_coffrage(D, niveaux, els, list(trame_x), list(trame_y))
-        if i == 0 and sans_position:
-            D.ecartes(P, sans_position)
+        ech, fenetres = decouper_plan(els, list(trame_x), list(trame_y))
+        for n, f in enumerate(fenetres, start=1):
+            sous_els = [el for el in els if _dans(el, f)]
+            P = planche_coffrage(D, niveaux, sous_els, list(trame_x), list(trame_y), ech, f, (n, len(fenetres)))
+            if i == 0 and n == 1 and sans_position:
+                D.ecartes(P, sans_position)
     if not groupes and sans_position:
         P = Planche(D, "Coffrage — éléments sans position", "Positions en plan inconnues : plans de coffrage impossibles", (0, 0))
         D.ecartes(P, sans_position)
@@ -948,8 +1024,9 @@ def presentations(D: Dessin):
 
 
 def dessiner_plans(lot: dict, projet: dict, bureau: Optional[dict], trame_x: Sequence[float],
-                   trame_y: Sequence[float], dalles: Optional[Sequence[dict]] = None) -> Tuple[ezdxf.document.Drawing, dict]:
-    nomen = nomenclature(lot)
+                   trame_y: Sequence[float], dalles: Optional[Sequence[dict]] = None,
+                   par_element: bool = False) -> Tuple[ezdxf.document.Drawing, dict]:
+    nomen = nomenclature(lot, par_element)
     types, ecartes, mat = nomen["types"], nomen["ecartes"], lot.get("materiaux") or {}
     D = Dessin(projet, bureau or {})
     if types.get("semelles") and trame_x and trame_y:

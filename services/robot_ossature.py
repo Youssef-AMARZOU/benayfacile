@@ -109,7 +109,8 @@ def libelle_axe(x: float, y: float, trame_x: Sequence[float], trame_y: Sequence[
     """Repère de file « B2 » (lettres en Y, chiffres en X) si le point est sur la trame."""
     ix = min(range(len(trame_x)), key=lambda i: abs(trame_x[i] - x)) if trame_x else 0
     iy = min(range(len(trame_y)), key=lambda i: abs(trame_y[i] - y)) if trame_y else 0
-    return f"{chr(65 + iy)}{ix + 1}"
+    from common import lettre_file
+    return f"{lettre_file(iy)}{ix + 1}"
 
 
 def _resume(oss: dict) -> dict:
@@ -160,6 +161,7 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
     Poteaux 40×40 aux deux premiers niveaux, 30×30 au-dessus ; poutres 25×50 ;
     deux voiles de 4,00 m × 18 cm sur les pignons ; une semelle par poteau.
     """
+    from common import lettre_file
     tx, ty = list(trame_x), list(trame_y)
 
     def demi(trame: List[float], i: int) -> float:
@@ -173,7 +175,7 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
     poteaux, poutres, semelles, voiles = [], [], [], []
     for ix, x in enumerate(tx):
         for iy, y in enumerate(ty):
-            axe = f"{chr(65 + iy)}{ix + 1}"
+            axe = f"{lettre_file(iy)}{ix + 1}"
             surface = demi(tx, ix) * demi(ty, iy)
             rive = ix in (0, len(tx) - 1) or iy in (0, len(ty) - 1)
             for niv in range(nb_niveaux):
@@ -222,10 +224,10 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
                     pu = _pu(g, q) * largeur + 1.35 * pp
                     ps = (g + q) * largeur + pp
                     if direction == "X":
-                        nom = f"{chr(65 + j)}{i + 1}-{chr(65 + j)}{i + 2}"
+                        nom = f"{lettre_file(j)}{i + 1}-{lettre_file(j)}{i + 2}"
                         xy = (trame[i], autre[j], trame[i + 1], autre[j])
                     else:
-                        nom = f"{chr(65 + i)}{j + 1}-{chr(65 + i + 1)}{j + 1}"
+                        nom = f"{lettre_file(i)}{j + 1}-{lettre_file(i + 1)}{j + 1}"
                         xy = (autre[j], trame[i], autre[j], trame[i + 1])
                     # poutre continue : M ≈ pl²/10 en travée (forfaitaire BAEL annexe E.1 simplifiée)
                     poutres.append({

@@ -66,3 +66,41 @@ def fmt(x, ndigits=2):
         return round(float(x), ndigits)
     except (TypeError, ValueError):
         return x
+
+
+# ───────────────────────── repères de files et niveaux ─────────────────────────
+
+def lettre_file(j: int) -> str:
+    """Repère de file en Y : 0 → A … 25 → Z, 26 → AA, 27 → AB… (comme les colonnes d'un tableur)."""
+    s = ""
+    j += 1
+    while j:
+        j, r = divmod(j - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def indice_file(lettres: str) -> int:
+    """Inverse de lettre_file : A → 0, Z → 25, AA → 26."""
+    n = 0
+    for c in lettres:
+        n = n * 26 + (ord(c) - 64)
+    return n - 1
+
+
+def rang_niveau(nom: str) -> tuple:
+    """Clé de tri des niveaux de bas en haut : Fondation, sous-sols (S-2, S-1), RDC, R+1, R+2…
+    Un libellé inconnu se place après, dans son ordre d'apparition (tri stable)."""
+    import re as _re
+    n = (nom or "").strip()
+    if n.lower().startswith("fondation"):
+        return (0, -1000)
+    m = _re.match(r"(?i)s(?:ous-sol)?\s*-?\s*(\d+)$", n)
+    if m:
+        return (0, -int(m.group(1)))
+    if n.upper() == "RDC":
+        return (0, 0)
+    m = _re.match(r"(?i)r\s*\+\s*(\d+)$", n)
+    if m:
+        return (0, int(m.group(1)))
+    return (1, 0)

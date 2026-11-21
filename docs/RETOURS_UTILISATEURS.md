@@ -104,3 +104,39 @@ et moi j'ai un modèle dans Robot » → « le bâtiment complètement calculé 
       non optimisées et dites comme telles).
 - [x] Le métré et la nomenclature des plans donnent le même poids d'acier (contrôlé ; écart signalé « ALERTE ECART ARITHMETIQUE »).
 - [ ] Reprendre le récapitulatif dans la note de calcul.
+
+## Généralisation : tout modèle Robot, pas seulement l'exemple R+4
+
+L'exemple R+4 est une trame régulière 3 × 3. Pour ne pas construire l'outil sur ce seul cas, un modèle volontairement
+irrégulier est testé (`tests/test_modele_irregulier.py`) : 27 niveaux, 4 × 28 files de portées inégales (repères
+jusqu'à AB), poteaux manquants, sections qui changent avec la hauteur, éléments dans un ordre quelconque (environ
+4 000 éléments). Ce test a révélé et fait corriger :
+
+- **ordre des niveaux** : il suivait la numérotation des barres ; il suit maintenant l'altitude (Fondation, S-2, S-1,
+  RDC, R+1…) ;
+- **repères de files** : au-delà de Z, les repères devenaient des symboles ; ils continuent en AA, AB… ;
+- **bâtiment long** : un plan de 105 m tombait au 1:500, illisible ; le plan reste au 1:100 et se découpe en parties
+  (« partie 1/3 ») coupées sur les files, avec les repères d'origine.
+
+Options ajoutées pour coller aux usages montrés dans la vidéo R2 :
+
+- détails de ferraillage **par type** (dossier d'exécution) ou **un par élément** (chaque poteau, poutre, voile dessiné) ;
+- métré en **une feuille par famille** (« Métré poteaux », « Métré poutres »…) plus le récapitulatif.
+
+### Limites connues, à traiter
+
+- [ ] Plan de fondation : pas encore découpé pour un bâtiment long (même méthode que les plans de coffrage à appliquer).
+- [ ] Noms de niveaux : déduits des altitudes (le premier niveau au-dessus du plus bas s'appelle RDC). Un modèle avec
+      sous-sol ou mezzanine, comme celui de la vidéo (« PH SOUS-SOL », « PLB MEZ »), doit reprendre les **noms d'étages
+      définis dans Robot** ; à faire et à tester sur un vrai fichier, Robot n'étant pas installé sur le poste de développement.
+- [ ] Panneaux non rectangulaires (dalle en L, voile avec ouverture) : dessinés par leur rectangle englobant ou leur
+      plus grande longueur.
+
+### À vérifier chez le testeur (modèle réel, Robot installé)
+
+1. Ouvrir son modèle 27 niveaux, « Calculer tout le modèle ».
+2. « Plans de ferraillage (DXF) », détails **par type** puis **un par élément** ; ouvrir chaque DXF dans AutoCAD :
+   onglets en bas, plans de coffrage par niveau, regroupement des étages courants, lisibilité (échelle, textes).
+3. « Exporter en Excel » : feuilles « Métré … » et « Récapitulatif métré » ; comparer béton et acier à son propre métré
+   sur deux ou trois éléments.
+4. Noter : noms de niveaux attendus, éléments « position inconnue » ou « non dessinés », temps de génération.

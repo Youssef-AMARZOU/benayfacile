@@ -200,12 +200,12 @@ function synthesisPayload() {
     voiles: state.voiles, dalles: state.dalles, balcons: state.balcons, planchers: state.planchers, bureau: state.bureau,
   };
 }
-async function dossierPlansDxf(lot, trame, el, dalles) {
+async function dossierPlansDxf(lot, trame, el, dalles, regroupement) {
   el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
   const p = state.project;
   const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot,
-      trame_x_m: trame?.x || [], trame_y_m: trame?.y || [], dalles: dalles || [], bureau: state.bureau }) });
+      trame_x_m: trame?.x || [], trame_y_m: trame?.y || [], dalles: dalles || [], regroupement: regroupement || 'type', bureau: state.bureau }) });
   const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
   const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
   const planches = r.planches.map((t, i) => `<li>${String(i + 1).padStart(2, '0')} ${esc(t)}</li>`).join('');
@@ -321,6 +321,7 @@ function tabProjet() {
       <button class="btn ghost small" id="rb-xlsx" disabled>Exporter en Excel</button>
       <button class="btn ghost small" id="rb-dxf" disabled>Plans de ferraillage (DXF)</button>
     </div>
+    ${select('rb-regroup', "Détails de ferraillage dans le DXF", [['type', 'Un par type (dossier d’exécution, éléments identiques regroupés)'], ['element', 'Un par élément (chaque poteau, poutre, voile dessiné)']], 'type')}
     <div class="export" id="rb-xlsx-res"></div>
     <div class="export" id="rb-dxf-res"></div>
   </div>
@@ -453,7 +454,7 @@ function tabProjet() {
         const el = $('rb-dxf-res');
         try {
           const o = vue.modele?.ossature || {};
-          await dossierPlansDxf(vue.lot, { x: o.trame_x_m, y: o.trame_y_m }, el, o.dalles);
+          await dossierPlansDxf(vue.lot, { x: o.trame_x_m, y: o.trame_y_m }, el, o.dalles, $('rb-regroup')?.value);
         } catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
 

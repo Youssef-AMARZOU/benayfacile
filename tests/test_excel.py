@@ -33,7 +33,7 @@ def lignes(ws, tete=5):
 
 def test_feuilles_et_comptes(lot):
     wb = classeur(lot)
-    assert wb.sheetnames == ["Synthèse", "Poteaux", "Poutres", "Semelles", "Voiles", "Métré détaillé", "Récapitulatif métré"]
+    assert wb.sheetnames == ["Synthèse", "Poteaux", "Poutres", "Semelles", "Voiles", "Métré poteaux", "Métré poutres", "Métré semelles", "Métré voiles", "Récapitulatif métré"]
     assert [len(lignes(wb[n])[1]) for n in ("Poteaux", "Poutres", "Semelles", "Voiles")] == [45, 60, 9, 10]
     assert wb["Poteaux"]["A1"].value == PROJET["projet"]
     assert wb["Poteaux"].freeze_panes == "B6"
@@ -119,10 +119,24 @@ def test_metre_element_non_verifie_sans_acier(lot):
 
 def test_feuilles_metre_dans_le_classeur(lot):
     wb = classeur(lot)
-    assert wb.sheetnames[-2:] == ["Métré détaillé", "Récapitulatif métré"]
-    entetes, rangs = lignes(wb["Métré détaillé"])
-    assert "Béton\n(m³)" in entetes and "Ratio\n(kg/m³)" in entetes
-    assert len(rangs) == sum(len(lot[f]) for f in ("poteaux", "poutres", "semelles", "voiles"))
+    assert wb.sheetnames[-5:] == ["Métré poteaux", "Métré poutres", "Métré semelles", "Métré voiles", "Récapitulatif métré"]
+    for f in ("poteaux", "poutres", "semelles", "voiles"):
+        entetes, rangs = lignes(wb[f"Métré {f}"])
+        assert "Béton\n(m³)" in entetes and "Ratio\n(kg/m³)" in entetes and entetes[0] == "Repère"
+        assert len(rangs) == len(lot[f])
+    assert wb["Métré poteaux"]["A2"].value.startswith("Métré détaillé des poteaux")
     recap = [c.value for r in wb["Récapitulatif métré"].iter_rows() for c in r if c.value is not None]
     assert "Barres de 12 m" in recap and "Ratio acier / béton armé" in recap
     assert not any(isinstance(v, str) and "ALERTE" in v for v in recap)
+
+
+
+def test_plans_un_detail_par_element():
+    import plans_ferraillage as pf
+    o = ro.ossature_simulation()
+    lot_ = e.lot(e.LotInput(**{k: o[k] for k in ("poteaux", "poutres", "semelles", "voiles")}))
+    _, par_type = pf.dessiner_plans(lot_, PROJET, {}, o["trame_x_m"], o["trame_y_m"])
+    _, par_el = pf.dessiner_plans(lot_, PROJET, {}, o["trame_x_m"], o["trame_y_m"], par_element=True)
+    assert par_el["types"] == {f: len(lot_[f]) for f in ("poteaux", "poutres", "semelles", "voiles")}
+    assert par_el["poids_total_kg"] == pytest.approx(par_type["poids_total_kg"], abs=0.5)   # même acier
+    assert len(par_el["planches"]) > len(par_type["planches"])
