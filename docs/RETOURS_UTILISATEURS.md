@@ -140,3 +140,18 @@ Options ajoutées pour coller aux usages montrés dans la vidéo R2 :
 3. « Exporter en Excel » : feuilles « Métré … » et « Récapitulatif métré » ; comparer béton et acier à son propre métré
    sur deux ou trois éléments.
 4. Noter : noms de niveaux attendus, éléments « position inconnue » ou « non dessinés », temps de génération.
+
+### US6 — Voir le modèle en 3D *(livrée, première version)*
+
+> **En tant qu'** ingénieur BET, **après** avoir lu mon modèle Robot, **je veux** le voir en 3D dans l'application, comme
+> dans Robot, **pour** vérifier d'un coup d'œil que tout a été lu (niveaux, files, poteaux, poutres, voiles, dalles) et,
+> après le calcul, repérer les éléments à reprendre.
+
+- [x] Vue 3D dans « Projet Robot » dès la lecture du modèle : poteaux, poutres, voiles, dalles, semelles à leur position.
+- [x] Files repérées au sol, niveaux nommés sur le côté ; vues Iso, Face, Côté, Dessus ; tourner, déplacer, zoomer.
+- [x] Filtre par famille et « jusqu'au niveau » (utile pour un bâtiment de 27 niveaux).
+- [x] Après le calcul : vert vérifié, rouge à revoir ou en erreur, ocre incomplet ; bulle au survol (repère, niveau,
+      section, état).
+- [x] Sans bibliothèque ni réseau (canvas du navigateur) ; thème clair et sombre.
+- [x] Altitude de chaque élément lue dans Robot ; à défaut, cumul des hauteurs d'étage (signalé si supposé).
+- [ ] À vérifier sur le modèle réel : lisibilité au-delà de 2 000 éléments, panneaux non rectangulaires.

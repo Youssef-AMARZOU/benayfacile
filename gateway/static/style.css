@@ -724,3 +724,35 @@ html[data-niveau="guide"] .row { align-items: start; }
 /* liste des planches du dossier DXF */
 ol.planches { margin: .4rem 0 .6rem 1.4rem; padding: 0; columns: 2; column-gap: 1.5rem; }
 ol.planches li { list-style: none; break-inside: avoid; }
+
+/* ───────── vue 3D du modèle (vue3d.js) ───────── */
+:root {
+  --v3d-fond: #f4f3ef; --v3d-axes: #b3301d;
+  --v3d-poteaux: #1f7f86; --v3d-poutres: #3b5f8a; --v3d-voiles: #8a6d3b; --v3d-dalles: #7b8a93; --v3d-semelles: #5b5f63;
+}
+:root[data-theme="dark"] {
+  --v3d-fond: #12161a; --v3d-axes: #ef6f58;
+  --v3d-poteaux: #4fc3c9; --v3d-poutres: #7fa7d9; --v3d-voiles: #d2b06e; --v3d-dalles: #8fa0aa; --v3d-semelles: #a9adb1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --v3d-fond: #12161a; --v3d-axes: #ef6f58;
+    --v3d-poteaux: #4fc3c9; --v3d-poutres: #7fa7d9; --v3d-voiles: #d2b06e; --v3d-dalles: #8fa0aa; --v3d-semelles: #a9adb1;
+  }
+}
+.vue3d { display: grid; gap: .5rem; }
+.v3d-barre { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: center; }
+.v3d-groupe { display: inline-flex; gap: .3rem; flex-wrap: wrap; }
+.v3d-case { display: inline-flex; gap: .3rem; align-items: center; font-size: .85rem; color: var(--graphite-2); }
+.v3d-case select { font: inherit; }
+.v3d-zone { position: relative; width: 100%; border: 1px solid var(--trait); border-radius: var(--rayon); overflow: hidden; }
+.v3d-canvas { display: block; width: 100%; cursor: grab; touch-action: none; }
+.v3d-canvas:active { cursor: grabbing; }
+.v3d-canvas:focus-visible { outline: 2px solid var(--armature); outline-offset: -2px; }
+.v3d-bulle { position: absolute; pointer-events: none; background: var(--feuille); color: var(--graphite);
+  border: 1px solid var(--trait); padding: .2rem .45rem; font-size: .8rem; border-radius: var(--rayon);
+  box-shadow: 0 2px 8px var(--ombre); white-space: nowrap; }
+.v3d-legende { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .8rem; color: var(--graphite-2); }
+.v3d-puce { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; margin-right: .3rem; vertical-align: -1px; }
+.v3d-compte { color: var(--graphite-3); }
+.v3d-aide { flex-basis: 100%; color: var(--graphite-3); }

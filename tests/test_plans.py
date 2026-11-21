@@ -186,3 +186,17 @@ def test_elements_sans_position_signales_et_dalles_dessinees(simulation):
     textes = [t.dxf.text for t in doc.modelspace().query("TEXT")]
     assert any("— position inconnue" in t for t in textes)
     assert "D 7 — dalle h = 16 cm" in textes
+
+
+def test_altitudes_pour_la_vue_3d():
+    """Chaque élément de la simulation porte son altitude : poteau et voile en pied, poutre au plancher qu'elle porte."""
+    o = ro.ossature_simulation()
+    h = 3.0
+    for p in o["poteaux"]:
+        niv = 0 if p["niveau"] == "RDC" else int(p["niveau"][2:])
+        assert p["z_m"] == pytest.approx(niv * h)
+    for b in o["poutres"]:
+        niv = 0 if b["niveau"] == "RDC" else int(b["niveau"][2:])
+        assert b["z_m"] == pytest.approx((niv + 1) * h)
+    assert all(v["z_m"] is not None and v["hauteur_m"] == h for v in o["voiles"])
+    assert all(s["z_m"] == 0.0 for s in o["semelles"])

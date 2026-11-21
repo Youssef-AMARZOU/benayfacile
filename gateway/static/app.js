@@ -326,6 +326,7 @@ function tabProjet() {
     <div class="export" id="rb-dxf-res"></div>
   </div>
 </div>
+<div class="card" id="rb-3d-carte" hidden><h2>Vue 3D du modèle</h2><div class="vue3d" id="rb-3d"></div></div>
 <div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
     init() {
       /* demo : exemple R+4 ; chemin : .rtd à faire ouvrir par Robot ; sinon : projet déjà ouvert dans Robot. */
@@ -369,6 +370,11 @@ function tabProjet() {
             ['Semelles', o.resume.semelles, true], ['Voiles', o.resume.voiles, true],
           ]) + notes(o.remarques) + `<details><summary>Hypothèses ${{ robot: 'de la lecture', excel: "de l'import" }[r.mode] || 'de la simulation'}</summary>${notes(o.hypotheses)}</details>`;
           $('rb-calc').disabled = false; $('rb-add').disabled = true;
+          if (window.Vue3D) {
+            $('rb-3d-carte').hidden = false;
+            vue.v3d = vue.v3d || window.Vue3D($('rb-3d'));
+            vue.v3d.charger(o);
+          }
           const total = o.resume.poteaux + o.resume.poutres + o.resume.semelles + o.resume.voiles;
           $('rb-res').innerHTML = vide('projet', `${total} éléments prêts. Lancez « Calculer tout le modèle ».`);
         } catch (e) { afficherErreur(el, e, {}, 'Lecture du modèle impossible. '); }
@@ -408,6 +414,7 @@ function tabProjet() {
           vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
           dessiner();
+          vue.v3d?.etats(vue.lot);
           $('rb-add').disabled = false; $('rb-xlsx').disabled = false; $('rb-dxf').disabled = false;
           $('rb-xlsx-res').innerHTML = ''; $('rb-dxf-res').innerHTML = '';
         } catch (e) { afficherErreur(resEl, e, CH_PROJET); }

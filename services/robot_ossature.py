@@ -195,7 +195,7 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
                 e0 = max(0.02, hauteur_etage / 250.0) * (2.0 if rive else 1.0)
                 poteaux.append({
                     "id": f"P-{axe}-{niv}", "nom": f"P {axe}", "niveau": nom_niveau(niv), "axe": axe,
-                    "x_m": x, "y_m": y,
+                    "x_m": x, "y_m": y, "z_m": niv * hauteur_etage,
                     "a_cm": a, "b_cm": b, "hauteur_m": hauteur_etage,
                     "lf_m": round(COEF_LF * hauteur_etage, 2),
                     "nu_kn": round(n_u, 1), "ns_kn": round(n_s, 1),
@@ -203,7 +203,7 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
                 })
             p_rdc = next(p for p in poteaux if p["axe"] == axe and p["niveau"] == "RDC")
             semelles.append({
-                "id": f"S-{axe}", "nom": f"S {axe}", "axe": axe, "x_m": x, "y_m": y,
+                "id": f"S-{axe}", "nom": f"S {axe}", "axe": axe, "x_m": x, "y_m": y, "z_m": 0.0,
                 "a_poteau_cm": p_rdc["a_cm"], "b_poteau_cm": p_rdc["b_cm"],
                 "ns_kn": p_rdc["ns_kn"], "nu_kn": p_rdc["nu_kn"],
                 "mx_knm": 0.0, "my_knm": 0.0,
@@ -232,7 +232,7 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
                     # poutre continue : M ≈ pl²/10 en travée (forfaitaire BAEL annexe E.1 simplifiée)
                     poutres.append({
                         "id": f"B-{direction}-{nom}-{niv}", "nom": f"Pt {nom}", "niveau": nom_niveau(niv),
-                        "x1_m": xy[0], "y1_m": xy[1], "x2_m": xy[2], "y2_m": xy[3],
+                        "x1_m": xy[0], "y1_m": xy[1], "x2_m": xy[2], "y2_m": xy[3], "z_m": (niv + 1) * hauteur_etage,
                         "b_cm": b, "h_cm": h, "portee_m": portee,
                         "mu_knm": round(pu * portee ** 2 / 10.0, 1),
                         "ms_knm": round(ps * portee ** 2 / 10.0, 1),
@@ -249,7 +249,7 @@ def ossature_simulation(trame_x: Sequence[float] = (0, 6, 12), trame_y: Sequence
             m = v * hauteur_etage * etages_au_dessus / 2.0  # kN.m
             voiles.append({
                 "id": f"V-{nom}-{niv}", "nom": nom, "niveau": nom_niveau(niv),
-                "x1_m": xv, "y1_m": y_mil - longueur / 2, "x2_m": xv, "y2_m": y_mil + longueur / 2,
+                "x1_m": xv, "y1_m": y_mil - longueur / 2, "x2_m": xv, "y2_m": y_mil + longueur / 2, "z_m": niv * hauteur_etage,
                 "longueur_m": longueur, "ep_cm": 18.0, "hauteur_m": hauteur_etage,
                 "n_kn": round(n, 1), "m_knm": round(m, 1), "v_kn": round(v, 1),
             })
@@ -531,7 +531,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
         if genre == "poteau":
             axe = libelle_axe(bas[0], bas[1], trame_x, trame_y)
             el = {"id": f"P{num}", "nom": f"P {axe}", "niveau": nom_niveau(niv), "axe": axe,
-                  "x_m": round(bas[0], 3), "y_m": round(bas[1], 3),
+                  "x_m": round(bas[0], 3), "y_m": round(bas[1], 3), "z_m": round(bas[2], 3),
                   "a_cm": dims[0] if dims else None, "b_cm": dims[1] if dims else None,
                   "hauteur_m": round(longueur, 2), "lf_m": round(COEF_LF * longueur, 2),
                   "nu_kn": round(u["n"], 1) if u else None, "ns_kn": round(s["n"], 1) if s else None,
@@ -543,6 +543,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
         else:
             el = {"id": f"B{num}", "nom": f"Pt {num}", "niveau": niveau_plancher(niv),
                   "x1_m": round(p1[0], 3), "y1_m": round(p1[1], 3), "x2_m": round(p2[0], 3), "y2_m": round(p2[1], 3),
+                  "z_m": round((p1[2] + p2[2]) / 2, 3),
                   "b_cm": dims[0] if dims else None, "h_cm": dims[1] if dims else None,
                   "portee_m": round(longueur, 2),
                   "mu_knm": round(u["my"], 1) if u else None, "ms_knm": round(s["my"], 1) if s else None,
@@ -568,7 +569,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
         except Exception as e:
             erreurs.note("Réactions d'appui", f"nœud {n_num}", e)
         semelles.append({"id": f"S{n_num}", "nom": f"S {pot['axe']}", "axe": pot["axe"],
-                         "x_m": round(bas[0], 3), "y_m": round(bas[1], 3),
+                         "x_m": round(bas[0], 3), "y_m": round(bas[1], 3), "z_m": round(bas[2], 3),
                          "a_poteau_cm": pot["a_cm"], "b_poteau_cm": pot["b_cm"],
                          "ns_kn": round(ns, 1) if ns is not None else None,
                          "nu_kn": round(nu, 1) if nu is not None else None,
@@ -593,6 +594,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
                                "niveau": niveau_plancher(indice_niveau(min(zs), niveaux)),
                                "xmin_m": round(min(p[0] for p in pts), 3), "xmax_m": round(max(p[0] for p in pts), 3),
                                "ymin_m": round(min(p[1] for p in pts), 3), "ymax_m": round(max(p[1] for p in pts), 3),
+                               "z_m": round(min(zs), 3),
                                "h_cm": epaisseur_depuis_nom(_label(obj, t_epaisseur)), **c,
                                "g_sup_kn_m2": None, "q_kn_m2": None})
                 continue
@@ -600,6 +602,7 @@ def extraire_ossature_com(projet, cas_elu: Optional[int] = None, cas_els: Option
             voiles.append({"id": f"V{obj.Number}", "nom": f"V {obj.Number}",
                            "niveau": nom_niveau(indice_niveau(min(zs), niveaux)),
                            "x1_m": round(a1[0], 3), "y1_m": round(a1[1], 3), "x2_m": round(a2[0], 3), "y2_m": round(a2[1], 3),
+                           "z_m": round(min(zs), 3),
                            "longueur_m": round(horiz, 2), "hauteur_m": round(max(zs) - min(zs), 2),
                            "ep_cm": epaisseur_depuis_nom(_label(obj, t_epaisseur)),
                            "n_kn": None, "m_knm": None, "v_kn": None})
