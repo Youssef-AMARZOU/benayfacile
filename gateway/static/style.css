@@ -720,3 +720,7 @@ html[data-niveau="guide"] .row { align-items: start; }
 :root[data-style="maroc"] .bandeau-titre { display: block; font-size: 24px; font-weight: 700; color: var(--armature); }
 :root[data-style="maroc"] .bandeau-sous { display: block; margin-top: 6px; font-size: 14px; color: var(--graphite-2); }
 :root[data-style="maroc"] main a:not(.btn) { color: var(--armature); }
+
+/* liste des planches du dossier DXF */
+ol.planches { margin: .4rem 0 .6rem 1.4rem; padding: 0; columns: 2; column-gap: 1.5rem; }
+ol.planches li { list-style: none; break-inside: avoid; }

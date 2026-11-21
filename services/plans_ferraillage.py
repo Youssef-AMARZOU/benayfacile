@@ -688,6 +688,26 @@ def planche_nomenclature(D: Dessin, nomen: dict):
     D.tableau(rx, ry, ["%%c", "kg/m", "Poids (kg)"], [40, 50, 50], rangs, 6.0)
 
 
+def nom_presentation(num: int, titre: str) -> str:
+    """Nom d'onglet AutoCAD : « 01 Plan de fondation » (caractères interdits retirés, 64 car. au plus)."""
+    return f"{num:02d} " + re.sub(r'[<>/\\":;?*|=`]', " ", titre).strip()[:60]
+
+
+def presentations(D: Dessin):
+    """Une présentation (onglet) A1 par planche, avec une fenêtre à l'échelle 1:1 sur la feuille de l'espace objet,
+    et l'espace objet ouvert sur l'ensemble des planches : l'utilisateur voit tout le dossier à l'ouverture."""
+    W, H = A1
+    for P in D.planches:
+        lay = D.doc.layouts.new(nom_presentation(P.num, P.titre))
+        lay.page_setup(size=(W, H), margins=(0, 0, 0, 0), units="mm")
+        lay.add_viewport(center=(W / 2, H / 2), size=(W, H),
+                         view_center_point=(P.x0 + W / 2, P.y0 + H / 2), view_height=H)
+    if D.planches and "Layout1" in D.doc.layouts:
+        D.doc.layouts.delete("Layout1")
+    largeur = len(D.planches) * (W + ESPACE_FEUILLES) - ESPACE_FEUILLES
+    D.doc.set_modelspace_vport(height=max(H, largeur * 0.6) * 1.05, center=(largeur / 2, H / 2))
+
+
 def dessiner_plans(lot: dict, projet: dict, bureau: Optional[dict], trame_x: Sequence[float],
                    trame_y: Sequence[float]) -> Tuple[ezdxf.document.Drawing, dict]:
     nomen = nomenclature(lot)
@@ -705,6 +725,7 @@ def dessiner_plans(lot: dict, projet: dict, bureau: Optional[dict], trame_x: Seq
                      (200, 120), vue_voile, types, mat, ecartes)
     if nomen["lignes"]:
         planche_nomenclature(D, nomen)
+    presentations(D)
     resume = {
         "planches": [p.titre for p in D.planches],
         "types": {fam: len(liste) for fam, liste in types.items()},

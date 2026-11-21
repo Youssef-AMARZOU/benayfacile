@@ -200,6 +200,21 @@ function synthesisPayload() {
     voiles: state.voiles, dalles: state.dalles, balcons: state.balcons, planchers: state.planchers, bureau: state.bureau,
   };
 }
+async function dossierPlansDxf(lot, trame, el) {
+  el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
+  const p = state.project;
+  const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot,
+      trame_x_m: trame?.x || [], trame_y_m: trame?.y || [], bureau: state.bureau }) });
+  const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
+  const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
+  const planches = r.planches.map((t, i) => `<li>${String(i + 1).padStart(2, '0')} ${esc(t)}</li>`).join('');
+  el.innerHTML = `<b>${r.planches.length} planches A1</b>, une par onglet de présentation dans AutoCAD (en bas de l'écran) :`
+    + `<ol class="planches">${planches}</ol>`
+    + `${types} — ${r.elements_dessines} éléments dessinés, ${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
+    + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
+    + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+}
 function addToSynthesis(type, item) {
   state[type].push(item);
   renderSynthesis();
@@ -406,6 +421,7 @@ function tabProjet() {
           n += state[f.synthese].length;
         }
         state.lot = vue.lot;
+        state.trame = { x: vue.modele?.ossature?.trame_x_m || [], y: vue.modele?.ossature?.trame_y_m || [] };
         renderSynthesis();
         toast(`${n} éléments envoyés à la synthèse.`);
       });
@@ -424,18 +440,10 @@ function tabProjet() {
 
       $('rb-dxf').addEventListener('click', async () => {
         if (!vue.lot) return;
-        const el = $('rb-dxf-res'); el.innerHTML = '<span class="spinner"></span>Dessin des plans…';
+        const el = $('rb-dxf-res');
         try {
-          const p = state.project, o = vue.modele?.ossature || {};
-          const r = await api('/api/dxf/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projet: p.projet, client: p.client, site: p.site, indice: p.indice, lot: vue.lot,
-              trame_x_m: o.trame_x_m || [], trame_y_m: o.trame_y_m || [], bureau: state.bureau }) });
-          const url = '/api/dxf/download/' + encodeURIComponent(r.fichier);
-          const types = Object.entries(r.types).filter(([, n]) => n).map(([f, n]) => `${n} ${f}`).join(', ');
-          el.innerHTML = `${r.planches.length} planches A1 — ${types} — ${r.elements_dessines} éléments dessinés, `
-            + `${Math.round(r.poids_total_kg).toLocaleString('fr-FR')} kg d'acier.`
-            + (r.elements_non_dessines ? ` <span class="warn-inline">${r.elements_non_dessines} non dessinés (à revoir).</span>` : '')
-            + `<br><a class="btn small" href="${url}" download="${esc(r.fichier)}">Télécharger ${esc(r.fichier)}</a>`;
+          const o = vue.modele?.ossature || {};
+          await dossierPlansDxf(vue.lot, { x: o.trame_x_m, y: o.trame_y_m }, el);
         } catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
 
@@ -704,7 +712,7 @@ ${row2(field('v-v', "V — effort tranchant ELU (kN)", '', 'number', 'any', 180)
 /* ============ MODULE: SYNTHÈSE ============ */
 function tabSynthese() {
   return {
-    html: `<h1 class="module-title">Synthèse de Calcul <small>Note de calcul HTML (page de garde, références BAEL/RPS, calculs, audit arithmétique) + plan DXF A3</small></h1>
+    html: `<h1 class="module-title">Synthèse de Calcul <small>Note de calcul HTML (page de garde, références BAEL/RPS, calculs, audit arithmétique) + dossier de plans DXF</small></h1>
 <div class="grid"><div class="card"><h2>Projet</h2>
 ${field('sy-projet', "Projet", state.project.projet, 'text', 'any', 'Résidence Al Amal, R+3')}
 ${row2(field('sy-client', "Client", state.project.client, 'text', 'any', "Maître d'ouvrage"), field('sy-site', "Site", state.project.site, 'text', 'any', 'Ville, quartier'))}
@@ -717,8 +725,7 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
 <div class="actions-col">
   <button class="btn gold" id="sy-note">Générer la note de calcul</button>
   <button class="btn" id="sy-note-save">Sauvegarder la note (serveur /output)</button>
-  <button class="btn" id="sy-dxf">Générer le plan DXF (semelles)</button>
-  <a class="btn ghost small" id="sy-dxf-link" style="display:none; text-align:center">Télécharger le DXF</a>
+  <button class="btn" id="sy-dxf">Générer le dossier de plans DXF</button>
 </div>
 </div>
 <div class="card"><h2>Aperçu</h2><div class="result" id="sy-log">${vide('synthese', 'La note suit la présentation d’un bureau d’études : page de garde et intervenants, règlements, hypothèses, étude sismique, ferraillage par type avec un exemple de calcul détaillé, quantités, conclusion et réserves.')}</div></div></div>`,
@@ -752,22 +759,16 @@ ${row2(field('sy-indice', "Indice", state.project.indice, 'text'), `<div class="
         } catch (e) { log('Erreur : ' + e.message); }
       });
       $('sy-dxf').addEventListener('click', async () => {
-        log('Génération du plan DXF…');
-        try {
-          const footings = (state.semelles_isolees.length ? state.semelles_isolees : [{ A_m: 2.27, B_m: 2.27, H_m: 0.49, d_m: 0.43, asx_cm2: 19.6, asy_cm2: 19.6, acier_x: '13 HA14', acier_y: '13 HA14' }])
-            .map((s, i) => ({ nom: 'S' + (i + 1), A_m: s.A_m, B_m: s.B_m, H_m: s.H_m, d_m: s.d_m,
-              asx_cm2: s.asx_cm2, asy_cm2: s.asy_cm2, acier_x: s.acier_x, acier_y: s.acier_y,
-              cote_x_m: [0, 6, 12][i % 3], cote_y_m: [0, 5, 10][Math.floor(i / 3) % 3] }));
-          const payload = { projet: state.project.projet, client: state.project.client, site: state.project.site,
-            indice: state.project.indice, trame_x_m: [0, 6, 12], trame_y_m: [0, 5, 10],
-            footings, bureau: state.bureau, sortie: 'plan_fondation' };
-          const r = await api('/api/dxf/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          const a = $('sy-dxf-link');
-          a.href = '/api/dxf/download/' + r.fichier;
-          a.textContent = `Télécharger ${r.fichier} (${r.octets} octets)`;
-          a.style.display = 'inline-block';
-          log('Plan DXF généré (calques AXES/COFFRAGE/ACIER_LONG/CADRES/COTATION/CARTOUCHE).');
-        } catch (e) { log('Erreur : ' + e.message); }
+        const el = $('sy-log');
+        if (!state.lot) {
+          el.innerHTML = '<p class="warn">Le dossier de plans se dessine à partir du modèle complet : il faut connaître '
+            + 'la position de chaque élément sur la trame et son niveau. Les éléments calculés un par un ne les ont pas.</p>'
+            + '<p>Ouvrez <a href="#" data-aller="projet">Projet Robot</a> (Robot ou classeur Excel), lancez le calcul, '
+            + 'puis « Envoyer à la synthèse » ou « Plans de ferraillage (DXF) ».</p>';
+          return;
+        }
+        try { await dossierPlansDxf(state.lot, state.trame, el); }
+        catch (e) { afficherErreur(el, e, {}, 'Plans impossibles. '); }
       });
     }
   };
@@ -988,7 +989,7 @@ async function loadDemo() {
     for (const p of demo.voiles) state.voiles.push(await api('/api/engine/voile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }));
     renderSynthesis(); renderCartouche();
     for (const k of ['projet', 'client', 'site', 'indice']) { const f = $('sy-' + k); if (f) f.value = state.project[k]; }
-    resEl.innerHTML = '<p class="ok">Scénario démo chargé : Robot (simulation) + sismique + 1 poteau + 1 poutre + 1 semelle + 1 voile. Générez la note ou le DXF.</p>';
+    resEl.innerHTML = '<p class="ok">Scénario démo chargé : Robot (simulation) + sismique + 1 poteau + 1 poutre + 1 semelle + 1 voile. Générez la note ; le dossier de plans DXF se fait depuis Projet Robot.</p>';
   } catch (e) { afficherErreur(resEl, e, {}, 'Chargement de la démo impossible. '); }
 }
 

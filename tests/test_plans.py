@@ -101,6 +101,19 @@ def test_dessin_complet_valide(simulation):
     # chaque planche A1 a son cartouche : le titre de la planche y figure
     for titre in res["planches"]:
         assert textes.count(titre) >= 2                          # titre de planche + cartouche
+    # une présentation (onglet AutoCAD) par planche, dans l'ordre, avec une fenêtre sur sa feuille
+    onglets = doc.layouts.names_in_taborder()
+    assert onglets == ["Model"] + [f"{i:02d} {t}" for i, t in enumerate(res["planches"], start=1)]
+    for i, nom in enumerate(onglets[1:]):
+        vues = [v for v in doc.layouts.get(nom).viewports() if v.dxf.status != 1]
+        assert len(vues) == 1
+        assert vues[0].dxf.view_center_point.x == pytest.approx(i * (pf.A1[0] + pf.ESPACE_FEUILLES) + pf.A1[0] / 2)
+
+
+def test_nom_presentation_sans_caracteres_interdits():
+    nom = pf.nom_presentation(3, 'Coupe A/B : "test"' + "x" * 80)
+    assert nom.startswith("03 Coupe A B") and len(nom) <= 63
+    assert not set('<>/\\":;?*|=`') & set(nom)
 
 
 def test_ecartes_affiches_sur_la_planche(simulation):
