@@ -30,12 +30,26 @@ def _note(**kw):
     return rs.build_note(rs.NoteInput(**data))
 
 
-def _textes_docx(doc):
-    t = [p.text for p in doc.paragraphs]
+def _textes_docx(doc, sans_equations_texte=False):
+    """Texte du .docx, espaces normalisés.
+
+    sans_equations_texte=True : écarte les équations tombées en texte (runs
+    « Cambria Math », export sans Office) — comme les équations natives (OMML),
+    déjà invisibles de .text — pour comparer à la note HTML dont on retire les
+    <math>. Sans cela, « , avec ψ fonction de l'usage » (DOCX) ne contient pas
+    « , avec fonction de l'usage » (HTML ébarbé) : le test échoue sur un poste
+    sans Office alors que rien n'est perdu.
+    """
+    def para(p):
+        if not sans_equations_texte:
+            return p.text
+        return "".join(r.text for r in p.runs if r.font.name != "Cambria Math")
+
+    t = [para(p) for p in doc.paragraphs]
     for tb in doc.tables:
         for row in tb.rows:
             for c in row.cells:
-                t.append(c.text)
+                t.append("\n".join(para(p) for p in c.paragraphs))
     return _norm(" ".join(t))
 
 
@@ -56,7 +70,10 @@ def note_et_docx():
 def test_tous_les_titres_et_cellules_de_la_note_sont_dans_le_docx(note_et_docx):
     h, doc, stats = note_et_docx
     arbre = lhtml.document_fromstring(h)
-    texte = _textes_docx(doc)
+    # équations écartées des deux côtés : OMML invisibles de .text, fallback
+    # « Cambria Math » filtré (voir _textes_docx) — le test doit passer avec
+    # ou sans Office installé.
+    texte = _textes_docx(doc, sans_equations_texte=True)
     titres = arbre.xpath("//body//h1|//body//h2|//body//h3|//body//h4")
     assert stats["titres"] == len(titres)
     for el in titres + arbre.xpath("//body//td|//body//th|//body//caption|//body//p"):
