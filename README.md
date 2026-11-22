@@ -44,8 +44,8 @@ Bénayfacile calcule vos poteaux, poutres, semelles et voiles selon le
 L'installation est du **« suivant, suivant, terminé »** — aucun Python, aucun
 droit administrateur, aucune configuration :
 
-1. Télécharger **`Benayfacile-Setup-0.5.1.exe`** (34,2 Mo) depuis la
-   [Release v0.5.1](https://github.com/Youssef-AMARZOU/benayfacile/releases/tag/v0.5.1)
+1. Télécharger **`Benayfacile-Setup-0.5.2.exe`** (34,2 Mo) depuis la
+   [Release v0.5.2](https://github.com/Youssef-AMARZOU/benayfacile/releases/tag/v0.5.2)
    — alternative portable : `Benayfacile-win64.zip` (43,9 Mo), à extraire et
    lancer sans installation.
 2. Double-clic sur le fichier → assistant en français → **Suivant** →

@@ -14,7 +14,7 @@ from launcher.paths import AppPaths
 from launcher.supervisor import BenayfacileApp, DemarrageImpossible
 from launcher.window import STRATEGIES, Navigateur, executer_avec_repli
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 
 
 def main(argv: list[str]) -> int:
