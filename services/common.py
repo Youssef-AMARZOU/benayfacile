@@ -130,3 +130,91 @@ def trier_niveaux(noms, z_par_niveau=None) -> list:
     if noms and all(z.get(n) is not None for n in noms if not rang_niveau(n) == (0, -1000.0)):
         return sorted(noms, key=lambda n: (-1e9 if rang_niveau(n) == (0, -1000.0) else z[n]))
     return sorted(noms, key=rang_niveau)
+
+
+def cote_niveau(z, ascii_seul: bool = False) -> str:
+    """Cote altimétrique lisible : +0,00 / −0,20 (m). ascii_seul : signe « - » (textes DXF)."""
+    if z is None:
+        return "—"
+    t = f"{float(z):+.2f}".replace(".", ",")
+    if t in ("-0,00", "+0,00"):
+        return "±0,00"
+    return t if ascii_seul else t.replace("-", "−")
+
+
+# ───────────────────── catégories des éléments horizontaux et des poteaux ─────────────────────
+# Une poutre est une « poutre » (porte un plancher), une « longrine » (relie les semelles au niveau
+# des fondations) ou un « chaînage » (ne porte pas de plancher : sous un mur, en rive…). Un tronçon
+# de poteau sous le plancher bas, entre la semelle et ce plancher, est un « fût » (amorce de poteau).
+
+CATEGORIES_POUTRE = {
+    "poutre": {"prefixe": "Pt", "libelle": "Poutre", "pluriel": "Poutres"},
+    "longrine": {"prefixe": "L", "libelle": "Longrine", "pluriel": "Longrines"},
+    "chainage": {"prefixe": "Ch", "libelle": "Chaînage", "pluriel": "Chaînages"},
+}
+ROLES_POTEAU = {
+    "poteau": {"prefixe": "P", "libelle": "Poteau", "pluriel": "Poteaux"},
+    "fut": {"prefixe": "F", "libelle": "Fût", "pluriel": "Fûts"},
+}
+_MOTS_CATEGORIE = (
+    ("longrine", ("LONGRINE", "LONGRINES", "LONGR", "LONG", "LGR", "LG")),
+    ("chainage", ("CHAINAGE", "CHAINAGES", "CHAIN", "CHN", "CH")),
+    ("poutre", ("POUTRE", "POUTRES", "PTR", "PT")),
+)
+
+
+def _jetons(nom: str) -> set:
+    """Mots d'un nom de section ou de type (« LG 30x40 », « Longrine_25x40 », « CH25X25 » → LG, LONGRINE, CH…)."""
+    import re as _re
+    import unicodedata
+    s = unicodedata.normalize("NFD", nom or "").encode("ascii", "ignore").decode().upper()
+    out = set()
+    for t in _re.split(r"[^A-Z0-9]+", s):
+        if not t:
+            continue
+        out.add(t)
+        m = _re.match(r"([A-Z]+)\d", t)
+        if m:
+            out.add(m.group(1))
+    return out
+
+
+def categorie_par_nom(*noms: str):
+    """(catégorie, motif) si un des noms (section, type de barre…) désigne explicitement une longrine, un chaînage
+    ou une poutre ; None sinon. Le nom donné dans Robot par le projeteur prime sur toute déduction géométrique."""
+    for nom in noms:
+        jetons = _jetons(nom)
+        for cat, mots in _MOTS_CATEGORIE:
+            if jetons & set(mots):
+                return cat, f"nom « {nom.strip()} »"
+    return None
+
+
+def dans_polygone(x: float, y: float, contour, tol: float = 0.05) -> bool:
+    """Point (x, y) à l'intérieur du contour ou sur un de ses bords (à tol près, m)."""
+    import math as _m
+    n = len(contour)
+    if n < 3:
+        return False
+    for k in range(n):
+        x1, y1 = contour[k][0], contour[k][1]
+        x2, y2 = contour[(k + 1) % n][0], contour[(k + 1) % n][1]
+        dx, dy = x2 - x1, y2 - y1
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / l2))
+        if _m.hypot(x - x1 - t * dx, y - y1 - t * dy) <= tol:
+            return True
+    dedans = False
+    for k in range(n):
+        x1, y1 = contour[k][0], contour[k][1]
+        x2, y2 = contour[(k + 1) % n][0], contour[(k + 1) % n][1]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dedans = not dedans
+    return dedans
+
+
+def aire_polygone(contour) -> float:
+    """Aire (m²) d'un contour plan, formule du lacet (sommets dans l'ordre, sens indifférent)."""
+    n = len(contour)
+    return abs(sum(contour[k][0] * contour[(k + 1) % n][1] - contour[(k + 1) % n][0] * contour[k][1]
+                   for k in range(n))) / 2.0 if n >= 3 else 0.0

@@ -48,6 +48,7 @@ FEUILLES: Dict[str, List[Colonne]] = {
         ("mu_knm", "Mu ELU (kN.m)", True, True, ("mu", "m elu", "moment elu")),
         ("ms_knm", "Ms ELS (kN.m)", False, True, ("ms", "m els", "moment els")),
         ("vu_kn", "Vu ELU (kN)", False, True, ("vu", "v elu", "effort tranchant", "tranchant")),
+        ("categorie", "Catégorie (poutre, longrine, chaînage)", False, False, ("categorie", "nature", "type")),
     ],
     "semelles": [
         ("nom", "Nom", True, False, ("element", "semelle", "repere")),
@@ -58,6 +59,7 @@ FEUILLES: Dict[str, List[Colonne]] = {
         ("nu_kn", "Nu ELU (kN)", False, True, ("nu", "n elu", "effort normal elu")),
         ("mx_knm", "Mx (kN.m)", False, True, ("mx",)),
         ("my_knm", "My (kN.m)", False, True, ("my",)),
+        ("ns_fut_m", "N.S. fût (m)", False, True, ("ns fut", "niveau superieur fut", "arase fut", "dessus fut")),
     ],
     "voiles": [
         ("nom", "Nom", True, False, ("element", "voile", "repere")),
@@ -206,7 +208,7 @@ def lire_classeur(octets: bytes) -> dict:
                     except (TypeError, ValueError):
                         remarques.append(f"{ws.title}, ligne {i} : « {entete} » n'est pas un nombre ({v!r}).")
                         el[k] = None
-                    if el[k] is not None and el[k] < 0:
+                    if el[k] is not None and el[k] < 0 and k != "ns_fut_m":   # une cote peut être négative
                         el[k] = abs(el[k])     # efforts en valeur absolue, comme la lecture Robot
                 else:
                     el[k] = None if v is None else str(v).strip() or None
@@ -222,6 +224,22 @@ def lire_classeur(octets: bytes) -> dict:
             if cle == "semelles":
                 el["mx_knm"] = el.get("mx_knm") or 0.0
                 el["my_knm"] = el.get("my_knm") or 0.0
+            if cle == "poutres":
+                texte = el.pop("categorie", None)
+                if texte:
+                    from common import categorie_par_nom
+                    cat = categorie_par_nom(texte)
+                    if cat:
+                        el["categorie"], el["categorie_motif"] = cat[0], "saisie dans le classeur"
+                    else:
+                        remarques.append(f"{ws.title}, ligne {i} : catégorie « {texte} » non reconnue (poutre, longrine "
+                                         "ou chaînage) ; poutre retenue.")
+            if cle == "semelles":
+                z = el.pop("ns_fut_m", None)
+                if z is not None:
+                    el["fut"] = {"z_bas_m": None, "z_haut_m": z, "hauteur_m": None, "modelise": False,
+                                 "a_cm": el.get("a_poteau_cm"), "b_cm": el.get("b_poteau_cm"),
+                                 "source": "niveau supérieur du fût saisi dans le classeur"}
             if cle == "voiles" and el.get("hauteur_m") is None:
                 el["hauteur_m"] = 3.0
             oss[cle].append(el)

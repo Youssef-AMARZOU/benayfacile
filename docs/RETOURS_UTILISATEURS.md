@@ -60,16 +60,16 @@
 - [ ] Classeur Excel importé : colonnes de position pour les poutres et les voiles (aujourd'hui seuls les poteaux ont un axe).
 - [ ] Vérifier sur le modèle réel du testeur (27 niveaux, sous-sol) : regroupement, échelle et lisibilité.
 
-### US4 — Longrines et chaînages *(à faire)*
+### US4 — Longrines et chaînages *(livrée avec le cahier des besoins R3, voir US8)*
 
 > **En tant qu'** ingénieur BET au Maroc, **je veux** que les poutres du niveau fondation soient appelées **longrines** et
 > les poutres de rive **chaînages**, dans les plans, la nomenclature et la note, **pour** que le dossier parle la langue
 > du chantier.
 
-- [ ] Poutre au niveau fondation → « Longrine », préfixe de type « L » (L1, L2…).
-- [ ] Poutre de rive, sur le contour du niveau → « Chaînage », préfixe « Ch ».
-- [ ] Les autres poutres restent « Poutre », préfixe « Pt ».
-- [ ] La règle de détection (niveau, position sur la trame) est écrite dans le code et testée. Un cas ambigu est signalé, pas deviné.
+- [x] Longrine, préfixe de type « L » (L1, L2…) : relie deux semelles au niveau des fondations, ou nommée ainsi dans Robot.
+- [x] Chaînage, préfixe « Ch » : ne porte aucune dalle modélisée (règle retenue plutôt que « poutre de rive », qui porte souvent un plancher).
+- [x] Les autres poutres restent « Poutre », préfixe « Pt ».
+- [x] Règle écrite (`robot_ossature.categorie_poutre`) et testée ; le motif de chaque catégorie est affiché et modifiable.
 - [ ] À valider avec l'ingénieur : le chaînage reçoit-il des dispositions propres (RPS 2011, chaînages horizontaux) ?
 
 ## R2 — Ce que montre la vidéo « bnayfacile » sur Instagram (21/11/2026)
@@ -125,7 +125,7 @@ Options ajoutées pour coller aux usages montrés dans la vidéo R2 :
 
 ### Limites connues, à traiter
 
-- [ ] Plan de fondation : pas encore découpé pour un bâtiment long (même méthode que les plans de coffrage à appliquer).
+- [x] Plan de fondation : découpé en parties au 1:100 pour un bâtiment long (comme les plans de coffrage).
 - [x] Noms de niveaux : les **étages définis dans Robot** sont repris quand ils tombent sur un plancher du modèle ;
       sinon RDC, R+1… depuis le plancher le plus bas. *Lecture de `Structure.Storeys` (Name, Level) écrite d'après l'API
       RobotOM, à confirmer sur un vrai fichier.*
@@ -174,3 +174,74 @@ des situations que l'exemple R+4 n'a pas (`tests/test_robot_generalisation.py`).
 | Vue 3D | style relu pour chaque élément à chaque image ; cadrage qui dépasse la pile au-delà de ~100 000 points ; dalles en rectangle ; barres inclinées absentes | jetons lus une fois par image, un dessin par image, cadrage en boucle ; contour réel ; « Autres » en gris ; repères de files espacés quand la trame est dense. Mesuré : 34 800 éléments, 0,1 s par image |
 | Moteur | l'axe neutre ELS balayait 2 000 points (90 % du temps de calcul en lot) | racine exacte du trinôme (mêmes résultats, test calculé à la main) : calcul en lot de 1 424 éléments en 0,6 s au lieu de 7,8 s |
 | Note de calcul | pas d'export Word | export .docx tiré de la même note que l'aperçu, équations Word natives |
+
+## R3 — Cahier des besoins « Évolutions du logiciel de calcul structurel » (22/11/2026)
+
+Quatre user stories sur les fondations, reçues du testeur. Numérotées ici US7 à US10 (US1 à US4 dans son document).
+
+### US7 — Dalles pleines dans les fondations *(livrée, première version)*
+
+> **En tant qu'** utilisateur, **je veux** ajouter et modéliser des dalles pleines au niveau des fondations, **pour** les
+> intégrer au modèle de calcul et à la conception 2D.
+
+- [x] Type « dalle pleine de fondation » (repère DF) : panneau horizontal du plancher bas lu dans Robot, ou dalle ajoutée
+      dans la carte « Fondations » de l'écran Projet Robot (entre deux files dans chaque direction).
+- [x] Dimensions (contour du panneau ou files choisies) et épaisseur ; charges g (hors poids propre) et q saisies, jamais supposées.
+- [x] Placée dans la vue 3D au niveau du plancher bas ; dessinée sur le plan de fondation.
+- [x] Prise en compte dans le calcul en lot : dalle pleine portée par les longrines de son contour (BAEL A.8.2, Annexe E3),
+      enrobage des fondations, continuité « isostatique » si elle n'est pas précisée (moment en travée maximal) ; treillis
+      soudé possible à la place des nappes inférieures, contrôlé (section, maille ≤ espacement A.8.2,42, Ø ≤ h/10).
+      Cas calculé à la main dans `tests/test_fondations.py` (As = 2,52 cm²/m pour 4,50 × 5,00 m, h = 15 cm).
+- [x] Dallage « sur terre-plein » : dessiné, mais signalé « à revoir » — sa justification (DTU 13.3) n'est pas faite par l'application.
+- [x] Métré (béton = surface du contour × épaisseur ; acier des nappes), feuilles Excel « Dalles » et « Métré dalles », note de calcul.
+- [ ] Limite : les charges d'une dalle **ajoutée hors Robot** ne sont pas dans les réactions d'appui lues dans Robot ;
+      à reporter dans le modèle Robot (ou à vérifier) pour le calcul des longrines et des semelles.
+- [ ] Limite : chapeaux sur appuis non comptés au métré (longueur d'arrêt à définir par l'ingénieur) ; recouvrements des
+      panneaux de treillis non compris.
+
+### US8 — Distinction poutres, chaînages, longrines *(livrée, première version)*
+
+> **En tant qu'** utilisateur, **je veux** que le logiciel distingue automatiquement poutres, chaînages et longrines des
+> fondations, **pour** les identifier et les représenter dans le modèle 2D.
+
+- [x] Catégorie de chaque élément horizontal : d'abord le nom de la section (ou un type de barre « Longrine », « Chaînage »)
+      donné dans Robot ; sinon la géométrie — longrine : relie deux semelles ; poutre : porte un panneau de dalle ;
+      chaînage : n'en porte aucun. Le motif est affiché ; la catégorie se corrige dans la carte « Fondations ».
+- [x] Désignation propre : L1, L2… (longrines), Ch1… (chaînages), Pt1… (poutres) ; F1… pour les fûts.
+- [x] Représentation distincte sur les plans : poutre en tireté, longrine hachurée (calque LONGRINES), chaînage quadrillé
+      (calque CHAINAGES), légende sur chaque planche ; couleurs distinctes dans la vue 3D.
+- [x] Classeur : colonne « Catégorie », métré par rubrique (Longrines, Chaînages, Poutres, Fûts…) ; note : types L, Ch, Pt.
+- [x] Sans Robot : colonne « Catégorie » dans le modèle Excel.
+- [ ] À valider avec l'ingénieur : vérification propre aux longrines de liaison sous séisme (RPS 2011) — non faite par l'application.
+
+### US9 — Coupe transversale du dallage de fondation *(livrée, première version)*
+
+> **En tant qu'** utilisateur, **je veux** une coupe transversale détaillée du dallage de fondation, **pour** visualiser sa
+> composition et ses caractéristiques.
+
+- [x] Planche « Coupe transversale du dallage de fondation », une coupe type 1:10 par dalle différente.
+- [x] Épaisseur cotée ; treillis soudé ou nappes du calcul, avec leur position (enrobage, barres du sens ly en points) ;
+      chapeaux sur l'appui (longueur d'arrêt à définir) ; longrine de rive en coupe.
+- [x] Couches sous la dalle, si elles sont définies (carte « Fondations » : « désignation ; épaisseur ») : béton de propreté,
+      film, hérisson… hachurées et cotées ; sinon la coupe l'indique.
+
+### US10 — Niveau supérieur des fûts de poteaux *(livrée, première version)*
+
+> **En tant qu'** utilisateur, **je veux** voir automatiquement le niveau supérieur des fûts de poteaux, **pour** contrôler
+> les niveaux et coordonner avec les autres éléments.
+
+- [x] Fûts repérés dans le modèle : tronçons de poteau entre les semelles et le plancher bas (zone basse, sans voile, ou
+      longrines nommées) ; sinon le poteau part de l'appui du modèle et le fût n'est pas modélisé (cote = appui).
+      Le classement de la zone (fûts ou étage, sous-sol) est expliqué ; les étages définis dans Robot priment.
+- [x] Cote altimétrique de chaque fût (Z du modèle, ±0,00 = Z 0) : carte « Fondations », plan de fondation (« N.S. fût »
+      à chaque semelle, tableau des fûts), coupe de chaque semelle (fût à sa hauteur, cotes de niveau), coupe du dallage,
+      note de calcul (colonne « N.S. fût »).
+- [x] Sans Robot : colonne « N.S. fût (m) » dans le modèle Excel.
+- [ ] Fût non modélisé : sa hauteur dépend du niveau d'assise des semelles (rapport géotechnique) — à saisir dans une version suivante.
+
+Effets de bord corrigés en chemin :
+- un modèle « semelles + fûts + longrines » nommait les fûts « RDC » et le vrai RDC « R+1 » ; les fûts sont maintenant au
+  niveau Fondation et les étages partent du plancher bas ;
+- un étage entièrement sous Z = 0 est un sous-sol (S-1…) au lieu d'un « RDC » ;
+- le plan de fondation est découpé en parties au 1:100 pour un bâtiment long (limite connue levée) ;
+- les attentes des semelles viennent du poteau qui part de la semelle, quel que soit le nom des niveaux.

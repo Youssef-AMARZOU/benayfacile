@@ -764,6 +764,7 @@ class LotInput(BaseModel):
     poutres: List[dict] = []
     semelles: List[dict] = []
     voiles: List[dict] = []
+    dalles: List[dict] = []        # dalles pleines (dont dalles de fondation, role = « fondation »)
     materiaux: Materiaux = Materiaux()
 
 
@@ -838,11 +839,78 @@ def _manquants(el: dict, champs: List[str]) -> List[str]:
     return [c for c in champs if el.get(c) is None]
 
 
+DALLAGE_TERRE_PLEIN = ("dallage sur terre-plein : ni porté par des appuis ni calculé comme une dalle pleine ; "
+                       "sa justification (DTU 13.3) n'est pas faite par l'application — épaisseur et treillis à valider")
+
+
+def dimensions_dalle(el: dict) -> Optional[tuple]:
+    """(lx, ly) d'une dalle : saisis, sinon pris sur le rectangle englobant de son contour (axes des appuis :
+    portées un peu plus grandes qu'entre nus, du côté de la sécurité)."""
+    if el.get("lx_m") is not None and el.get("ly_m") is not None:
+        return tuple(sorted((float(el["lx_m"]), float(el["ly_m"]))))
+    if all(el.get(k) is not None for k in ("xmin_m", "xmax_m", "ymin_m", "ymax_m")):
+        return tuple(sorted((round(el["xmax_m"] - el["xmin_m"], 3), round(el["ymax_m"] - el["ymin_m"], 3))))
+    return None
+
+
+def traiter_dalle(el: dict, m: "Materiaux", sortie: list) -> None:
+    """Une dalle pleine du modèle (ou ajoutée) : BAEL A.8.2 si elle est portée par ses appuis ; un dallage sur
+    terre-plein est signalé, pas justifié. Charges g et q saisies, jamais supposées."""
+    dims = dimensions_dalle(el)
+    e = {**el, "lx_m": dims[0], "ly_m": dims[1]} if dims else dict(el)
+    ligne = {"id": e.get("id"), "nom": e.get("nom"), "niveau": e.get("niveau"), "axe": None, "entree": e}
+    manque = (["dimensions (lx, ly ou contour)"] if not dims else []) + _manquants(e, ["h_cm"])
+    ts = e.get("armature") == "treillis"
+    if ts:
+        manque += [f"treillis : {c}" for c in _manquants(e, ["ts_diametre_mm", "ts_maille_cm"])]
+    if e.get("appui") == "terre_plein":
+        if manque:
+            ligne.update(statut="incomplet", problemes=[f"donnée manquante : {', '.join(manque)}"])
+        else:
+            res = {"type": "dallage", "h_cm": e["h_cm"], "lx_m": dims[0], "ly_m": dims[1]}
+            if ts:
+                res["treillis"] = {"designation": f"TS Ø{e['ts_diametre_mm']:g} maille {e['ts_maille_cm']:g} × {e['ts_maille_cm']:g} cm",
+                                   "diametre_mm": e["ts_diametre_mm"], "maille_cm": e["ts_maille_cm"],
+                                   "as_cm2_m": round(dalles.section_treillis_cm2_m(e["ts_diametre_mm"], e["ts_maille_cm"]), 2)}
+            ligne.update(resultat=res, statut="a_revoir", problemes=[DALLAGE_TERRE_PLEIN])
+        sortie.append(ligne)
+        return
+    manque += _manquants(e, ["g_sup_kn_m2", "q_kn_m2"])
+    if manque:
+        ligne.update(statut="incomplet", problemes=[f"donnée manquante : {', '.join(manque)}"])
+        sortie.append(ligne)
+        return
+    try:
+        kw = dict(lx_m=dims[0], ly_m=dims[1], h_cm=e["h_cm"], g_sup_kn_m2=e["g_sup_kn_m2"], q_kn_m2=e["q_kn_m2"],
+                  continuite=e.get("continuite") or "isostatique", fc28_mpa=m.fc28_mpa, fe_mpa=m.fe_mpa,
+                  fissuration=m.fissuration)
+        if e.get("role") == "fondation":
+            kw["enrobage_mm"] = m.enrobage_semelle_mm            # au contact du sol : enrobage des fondations
+        res = dalles.dalle(dalles.DalleInput(**kw))
+        if not e.get("continuite"):
+            res["hypotheses"] = ["Continuité non précisée : panneau isostatique retenu (moment en travée maximal)."] \
+                + res["hypotheses"]
+        if e.get("role") == "fondation":
+            res["hypotheses"] = ["Dalle de fondation portée par les longrines (ou poutres) de son contour ; le sol "
+                                 "sous-jacent n'est pas compté comme appui (du côté de la sécurité)."] + res["hypotheses"]
+        pb = list(res.get("remarques") or [])
+        if ts:
+            res["treillis"] = dalles.controle_treillis(res, e["ts_diametre_mm"], e["ts_maille_cm"])
+            pb += [f"treillis {res['treillis']['designation']} : {c['nom']} non vérifié ({c['valeur']} / {c['limite']})"
+                   for c in res["treillis"]["controles"] if not c["ok"]]
+        ligne.update(resultat=res, statut="a_revoir" if pb else "verifie", problemes=pb)
+    except ValidationError as err:
+        ligne.update(statut="erreur", problemes=messages_validation(err))
+    except ValueError as err:
+        ligne.update(statut="erreur", problemes=[str(err)])
+    sortie.append(ligne)
+
+
 @app.post("/lot")
 def lot(inp: LotInput):
     """Calcule chaque élément ; un élément incomplet ou en erreur est signalé, jamais ignoré."""
     m = inp.materiaux
-    sorties = {"poteaux": [], "poutres": [], "semelles": [], "voiles": []}
+    sorties = {"poteaux": [], "poutres": [], "semelles": [], "voiles": [], "dalles": []}
 
     def traiter(famille: str, el: dict, requis: List[str], construire, calculer, verdict):
         ligne = {"id": el.get("id"), "nom": el.get("nom"), "niveau": el.get("niveau"),
@@ -890,6 +958,9 @@ def lot(inp: LotInput):
                                      m_knm=e.get("m_knm") or 0.0, v_kn=e.get("v_kn") or 0.0,
                                      fc28_mpa=m.fc28_mpa, fe_mpa=m.fe_mpa, fissuration=m.fissuration),
                 voile, _verdict_voile)
+
+    for el in inp.dalles:
+        traiter_dalle(el, m, sorties["dalles"])
 
     resume = {"total": 0, "verifie": 0, "a_revoir": 0, "incomplet": 0, "erreur": 0}
     for lignes in sorties.values():

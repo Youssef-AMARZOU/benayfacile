@@ -63,6 +63,7 @@ F2, F3, F1 = "0.00", "0.000", "0.0"
 
 POTEAUX: List[Colonne] = [
     ("Élément", "", lambda l: l.get("nom"), None, 11),
+    ("Rôle", "", lambda l: "Fût" if _e(l, "role") == "fut" else "Poteau", None, 8),
     ("Niveau", "", lambda l: l.get("niveau"), None, 8),
     ("a", "cm", lambda l: _e(l, "a_cm"), F1, 7),
     ("b", "cm", lambda l: _e(l, "b_cm"), F1, 7),
@@ -80,8 +81,15 @@ POTEAUX: List[Colonne] = [
     ("Ferraillage", "", lambda l: _r(l, "ferraillage", "choix"), None, 24),
 ]
 
+def _categorie(l: dict) -> str:
+    from common import CATEGORIES_POUTRE
+    c = _e(l, "categorie") or "poutre"
+    return CATEGORIES_POUTRE.get(c, CATEGORIES_POUTRE["poutre"])["libelle"]
+
+
 POUTRES: List[Colonne] = [
     ("Élément", "", lambda l: l.get("nom"), None, 13),
+    ("Catégorie", "", _categorie, None, 11),
     ("Niveau", "", lambda l: l.get("niveau"), None, 8),
     ("b", "cm", lambda l: _e(l, "b_cm"), F1, 7),
     ("h", "cm", lambda l: _e(l, "h_cm"), F1, 7),
@@ -212,6 +220,30 @@ def _feuille(wb: Workbook, nom: str, normes: str, colonnes: Sequence[Colonne], l
     return ws
 
 
+def _arm(l: dict, cle: str):
+    return _r(l, "resultats", cle, "ferraillage", "choix")
+
+
+DALLES: List[Colonne] = [
+    ("Élément", "", lambda l: l.get("nom"), None, 11),
+    ("Niveau", "", lambda l: l.get("niveau"), None, 9),
+    ("Appui", "", lambda l: "terre-plein" if _e(l, "appui") == "terre_plein" else "longrines / poutres", None, 16),
+    ("lx", "m", lambda l: _e(l, "lx_m"), F2, 7),
+    ("ly", "m", lambda l: _e(l, "ly_m"), F2, 7),
+    ("h", "cm", lambda l: _e(l, "h_cm"), F1, 7),
+    ("g sup.", "kN/m²", lambda l: _e(l, "g_sup_kn_m2"), F2, 8),
+    ("q", "kN/m²", lambda l: _e(l, "q_kn_m2"), F2, 8),
+    ("pu", "kN/m²", lambda l: _r(l, "charges", "pu_kn_m2"), F2, 8),
+    ("M0x", "kN.m/m", lambda l: _r(l, "m0x_knm"), F2, 8),
+    ("As x", "cm²/m", lambda l: _r(l, "resultats", "x_travee", "as_retenue_cm2_m"), F2, 8),
+    ("As y", "cm²/m", lambda l: _r(l, "resultats", "y_travee", "as_retenue_cm2_m"), F2, 8),
+    ("Travée lx", "", lambda l: _arm(l, "x_travee"), None, 12),
+    ("Travée ly", "", lambda l: _arm(l, "y_travee"), None, 12),
+    ("Chapeaux", "", lambda l: _arm(l, "appuis"), None, 12),
+    ("Treillis", "", lambda l: _r(l, "treillis", "designation"), None, 20),
+]
+
+
 def classeur_resultats(lot: dict, projet: dict, bureau: Optional[dict] = None) -> Workbook:
     wb = Workbook()
     ws = wb.active
@@ -251,7 +283,7 @@ def classeur_resultats(lot: dict, projet: dict, bureau: Optional[dict] = None) -
         c.border = Border(bottom=TRAIT_FORT)
     r += 1
     total = [0] * 5
-    for cle, nom, _, _ in FAMILLES:
+    for cle, nom, _, _ in FAMILLES + ([("dalles", "Dalles", "", None)] if lot.get("dalles") else []):
         lignes = lot.get(cle) or []
         valeurs = [len(lignes)] + [sum(1 for l in lignes if l.get("statut") == s)
                                    for s in ("verifie", "a_revoir", "incomplet", "erreur")]
@@ -277,6 +309,9 @@ def classeur_resultats(lot: dict, projet: dict, bureau: Optional[dict] = None) -
 
     for cle, nom, normes, colonnes in FAMILLES:
         _feuille(wb, nom, normes, colonnes, lot.get(cle) or [], projet)
+    if lot.get("dalles"):
+        _feuille(wb, "Dalles", "BAEL 91 rév. 99 — A.8.2, Annexe E3 (dalles pleines, dont dalles de fondation)",
+                 DALLES, lot["dalles"], projet)
     wb.metre = feuilles_metre(wb, lot, projet)
     return wb
 
@@ -292,7 +327,7 @@ def classeur_octets(lot: dict, projet: dict, bureau: Optional[dict] = None) -> b
 NOMS_FAMILLE = {"poteaux": "Poteau", "poutres": "Poutre", "semelles": "Semelle", "voiles": "Voile"}
 
 METRE = [
-    ("Élément", "", lambda l: NOMS_FAMILLE.get(l["famille"]), None, 10),
+    ("Élément", "", lambda l: l.get("rubrique") or NOMS_FAMILLE.get(l["famille"]), None, 12),
     ("Repère", "", lambda l: l["nom"], None, 12),
     ("Axe", "", lambda l: l["axe"], None, 7),
     ("Niveau", "", lambda l: l["niveau"], None, 9),
@@ -347,7 +382,8 @@ def feuilles_metre(wb: Workbook, lot: dict, projet: dict) -> dict:
     """Feuilles « Métré poteaux », « Métré poutres »… (une ligne par élément) et « Récapitulatif métré »."""
     from metre import metre
     m = metre(lot)
-    for fam, titre in (("poteaux", "poteaux"), ("poutres", "poutres"), ("semelles", "semelles"), ("voiles", "voiles")):
+    for fam, titre in (("poteaux", "poteaux"), ("poutres", "poutres"), ("semelles", "semelles"), ("voiles", "voiles"),
+                       ("dalles", "dalles")):
         ls = [l for l in m["lignes"] if l["famille"] == fam]
         if ls:
             ws_f = _feuille(wb, f"Métré {titre}", "béton et acier par élément", METRE[1:], ls, projet)
@@ -371,7 +407,7 @@ def feuilles_metre(wb: Workbook, lot: dict, projet: dict) -> dict:
         r += 1
     r += 1
     ws.cell(row=r, column=1, value="Par famille").font = Font(bold=True, size=12, color=GRAPHITE)
-    r = _table(ws, r + 1, ["Famille", "Éléments", "Béton (m³)", "Acier (kg)", "Ratio (kg/m³)", "Détail acier (kg)", "Non ferraillés"],
+    r = _table(ws, r + 1, ["Rubrique", "Éléments", "Béton (m³)", "Acier (kg)", "Ratio (kg/m³)", "Détail acier (kg)", "Non ferraillés"],
                [[f["famille"], f["elements"], f["beton_m3"], f["acier_kg"], f["ratio_kg_m3"],
                  " ; ".join(f"{u} {kg:.1f}" for u, kg in f["acier_par_usage_kg"].items()), f["non_ferrailles"] or None]
                 for f in m["familles"]],

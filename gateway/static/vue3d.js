@@ -25,6 +25,7 @@
   const FAMILLES = [['poteaux', 'Poteaux'], ['poutres', 'Poutres'], ['voiles', 'Voiles'], ['dalles', 'Dalles'],
                     ['semelles', 'Semelles'], ['autres', 'Autres']];
   const ETATS = { verifie: 'Vérifié', a_revoir: 'À revoir', erreur: 'Erreur', incomplet: 'Incomplet' };
+  const CATEGORIES = { poutre: 'Poutre', longrine: 'Longrine', chainage: 'Chaînage' };
   const VUES = { iso: [-0.75, 0.55], face: [0, 0.02], cote: [-Math.PI / 2, 0.02], dessus: [0, Math.PI / 2 - 0.001] };
 
   function Vue3D(conteneur) {
@@ -86,18 +87,24 @@
         z = zNiv[n] + (hNiv[n] || hDefaut);
       }
       const hDe = (n) => hNiv[n] || hDefaut;
+      // dalle du plancher bas sans altitude lue : au niveau des pieds des poteaux
+      const zPieds = [...(o.poteaux || []), ...(o.semelles || [])].map(e => e.z_m).filter(z => z != null);
+      const zBas = o.fondation?.z_plancher_bas_m ?? (zPieds.length ? Math.min(...zPieds) : 0);
       st.rang = Object.fromEntries(noms.map((n, i) => [n, fond(n) ? -1 : i]));
       const prims = [];
       for (const p of o.poteaux || []) {
         const xy = (p.x_m != null && p.y_m != null) ? [p.x_m, p.y_m] : xyAxe(p.axe); if (!xy) continue;
         const z0 = p.z_m ?? zNiv[p.niveau] ?? 0, h = p.hauteur_m || hDe(p.niveau);
-        prims.push({ fam: 'poteaux', id: p.id, nom: p.nom, niveau: p.niveau, info: p.a_cm ? `${p.a_cm}×${p.b_cm} cm` : '',
+        prims.push({ fam: 'poteaux', id: p.id, nom: p.nom, niveau: p.niveau,
+                     info: (p.role === 'fut' ? 'fût ' : '') + (p.a_cm ? `${p.a_cm}×${p.b_cm} cm` : ''),
                      pts: [[xy[0], xy[1], z0], [xy[0], xy[1], z0 + h]], ep: (p.a_cm || 30) / 100 });
       }
       for (const b of o.poutres || []) {
         if ([b.x1_m, b.y1_m, b.x2_m, b.y2_m].some(v => v == null)) continue;
         const zb = b.z_m ?? (/^fondation/i.test(b.niveau) ? 0 : (zNiv[b.niveau] ?? 0) + hDe(b.niveau));
-        prims.push({ fam: 'poutres', id: b.id, nom: b.nom, niveau: b.niveau, info: b.b_cm ? `${b.b_cm}×${b.h_cm} cm` : '',
+        const cat = CATEGORIES[b.categorie] ? b.categorie : 'poutre';
+        prims.push({ fam: 'poutres', cat, id: b.id, nom: b.nom, niveau: b.niveau,
+                     info: (cat !== 'poutre' ? CATEGORIES[cat].toLowerCase() + ' ' : '') + (b.b_cm ? `${b.b_cm}×${b.h_cm} cm` : ''),
                      pts: [[b.x1_m, b.y1_m, b.z1_m ?? zb], [b.x2_m, b.y2_m, b.z2_m ?? zb]], ep: (b.b_cm || 25) / 100 });
       }
       for (const v of o.voiles || []) {
@@ -108,7 +115,7 @@
       }
       for (const d of o.dalles || []) {
         if ([d.xmin_m, d.xmax_m, d.ymin_m, d.ymax_m].some(c => c == null)) continue;
-        const zd = d.z_m ?? ((zNiv[d.niveau] ?? 0) + hDe(d.niveau));
+        const zd = d.z_m ?? (fond(d.niveau || '') ? zBas : (zNiv[d.niveau] ?? 0) + hDe(d.niveau));
         const contour = Array.isArray(d.contour_m) && d.contour_m.length >= 3 ? d.contour_m.map(c => [c[0], c[1], zd])
           : [[d.xmin_m, d.ymin_m, zd], [d.xmax_m, d.ymin_m, zd], [d.xmax_m, d.ymax_m, zd], [d.xmin_m, d.ymax_m, zd]];
         prims.push({ fam: 'dalles', id: d.id, nom: d.nom, niveau: d.niveau, info: d.type === 'balcon' ? 'balcon' : (d.h_cm ? `h = ${d.h_cm} cm` : 'dalle'),
@@ -137,7 +144,7 @@
     // dimensions des semelles et état de chaque élément après le calcul
     function etats(lot) {
       st.etats = {};
-      for (const fam of ['poteaux', 'poutres', 'semelles', 'voiles'])
+      for (const fam of ['poteaux', 'poutres', 'semelles', 'voiles', 'dalles'])
         for (const l of (lot && lot[fam]) || []) if (l.id != null) st.etats[l.id] = { statut: l.statut, r: l.resultat };
       for (const p of st.prims) {
         if (p.fam !== 'semelles') continue;
@@ -181,6 +188,8 @@
       if (e === 'a_revoir' || e === 'erreur') return jeton('--non-verifie', '#b3301d');
       if (e === 'incomplet') return jeton('--attention', '#7a4f00');
       if (p.fam === 'autres') return jeton('--graphite-3', '#888');
+      if (p.cat === 'longrine') return jeton('--v3d-longrines', '#5b4a8a');
+      if (p.cat === 'chainage') return jeton('--v3d-chainages', '#6a7d2f');
       return jeton(`--v3d-${p.fam}`, '#3a8a8a');
     }
 
@@ -273,7 +282,10 @@
       const puce = (v, t) => `<span class="v3d-puce" style="background:var(${v})"></span>${t}`;
       legende.innerHTML = (calc
         ? [puce('--verifie', 'vérifié'), puce('--non-verifie', 'à revoir / erreur'), puce('--attention', 'incomplet')].join(' ')
-        : [puce('--v3d-poteaux', 'poteaux'), puce('--v3d-poutres', 'poutres'), puce('--v3d-voiles', 'voiles'), puce('--v3d-dalles', 'dalles')].join(' '))
+        : [puce('--v3d-poteaux', 'poteaux'), puce('--v3d-poutres', 'poutres'),
+           ...(st.prims.some(p => p.cat === 'longrine') ? [puce('--v3d-longrines', 'longrines')] : []),
+           ...(st.prims.some(p => p.cat === 'chainage') ? [puce('--v3d-chainages', 'chaînages')] : []),
+           puce('--v3d-voiles', 'voiles'), puce('--v3d-dalles', 'dalles')].join(' '))
         + ` <span class="v3d-compte">${n('poteaux')} poteaux · ${n('poutres')} poutres · ${n('voiles')} voiles · ${n('dalles')} panneaux · ${st.niveaux.length} niveaux`
         + (n('autres') ? ` · ${n('autres')} élément(s) incliné(s) non calculé(s), en gris` : '')
         + (st.supposee ? ' · hauteur d’étage non lue : 3,00 m supposés pour l’affichage' : '')

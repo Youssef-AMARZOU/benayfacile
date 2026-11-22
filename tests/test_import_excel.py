@@ -121,3 +121,19 @@ def test_classeur_d_un_autre_format_explique():
 def test_modele_vide_cite_les_feuilles_a_remplir():
     with pytest.raises(ValueError, match="sous les en-têtes des feuilles Poteaux, Poutres, Semelles, Voiles"):
         ix.lire_classeur(ix.creer_modele())
+
+
+def test_categorie_des_poutres_et_niveau_superieur_des_futs():
+    """Sans Robot : la catégorie (longrine, chaînage) et la cote N.S. du fût se saisissent dans le classeur ;
+    une cote négative reste négative (seuls les efforts sont pris en valeur absolue)."""
+    o = ro.ossature_simulation()
+    o["poutres"][0]["categorie"] = "Longrine"
+    o["poutres"][1]["categorie"] = "chaînage"
+    o["poutres"][2]["categorie"] = "linteau"
+    for s in o["semelles"]:
+        s["ns_fut_m"] = -0.20
+    importe = ix.lire_classeur(remplir(o))
+    p = importe["poutres"]
+    assert (p[0]["categorie"], p[1]["categorie"]) == ("longrine", "chainage") and "categorie" not in p[3]
+    assert any("« linteau » non reconnue" in r for r in importe["remarques"])
+    assert {s["fut"]["z_haut_m"] for s in importe["semelles"]} == {-0.2}

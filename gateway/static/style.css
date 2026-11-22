@@ -729,15 +729,18 @@ ol.planches li { list-style: none; break-inside: avoid; }
 :root {
   --v3d-fond: #f4f3ef; --v3d-axes: #b3301d;
   --v3d-poteaux: #1f7f86; --v3d-poutres: #3b5f8a; --v3d-voiles: #8a6d3b; --v3d-dalles: #7b8a93; --v3d-semelles: #5b5f63;
+  --v3d-longrines: #5b4a8a; --v3d-chainages: #6a7d2f;
 }
 :root[data-theme="dark"] {
   --v3d-fond: #12161a; --v3d-axes: #ef6f58;
   --v3d-poteaux: #4fc3c9; --v3d-poutres: #7fa7d9; --v3d-voiles: #d2b06e; --v3d-dalles: #8fa0aa; --v3d-semelles: #a9adb1;
+  --v3d-longrines: #b5a3e8; --v3d-chainages: #b8cc6e;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --v3d-fond: #12161a; --v3d-axes: #ef6f58;
     --v3d-poteaux: #4fc3c9; --v3d-poutres: #7fa7d9; --v3d-voiles: #d2b06e; --v3d-dalles: #8fa0aa; --v3d-semelles: #a9adb1;
+    --v3d-longrines: #b5a3e8; --v3d-chainages: #b8cc6e;
   }
 }
 .vue3d { display: grid; gap: .5rem; }
@@ -756,3 +759,12 @@ ol.planches li { list-style: none; break-inside: avoid; }
 .v3d-puce { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; margin-right: .3rem; vertical-align: -1px; }
 .v3d-compte { color: var(--graphite-3); }
 .v3d-aide { flex-basis: 100%; color: var(--graphite-3); }
+
+/* ───────── carte Fondations (fondations.js) ───────── */
+.fondations h3.sous { margin: 18px 0 6px; font-size: 15px; }
+.fondations h3.sous:first-child { margin-top: 0; }
+.fond-table input, .fond-table select { font: inherit; padding: 2px 4px; }
+.fond-table td { vertical-align: middle; }
+.fond-ajout { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 10px 0; font-size: 13.5px; }
+.fond-ajout select, .fond-ajout input { font: inherit; padding: 2px 4px; }
+.fondations textarea { width: 100%; max-width: 60ch; font: inherit; }

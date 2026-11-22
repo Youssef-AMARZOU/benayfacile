@@ -267,10 +267,10 @@ function renderSynthesis() {
 /* ============ MODULE: PROJET ROBOT (tout le modèle) ============ */
 const FAMILLES = [
   { cle: 'poteaux', label: 'Poteaux', synthese: 'poteaux',
-    cols: [['Niveau', l => l.niveau], ['Section', l => dim(l.entree.a_cm, l.entree.b_cm)], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
+    cols: [['Niveau', l => l.niveau + (l.entree.role === 'fut' ? ' (fût)' : '')], ['Section', l => dim(l.entree.a_cm, l.entree.b_cm)], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
            ['Nu/Nu,lim', l => l.resultat?.nu_rapport, 'n'], ['As (cm²)', l => l.resultat?.as_calculee_cm2, 'n'], ['Ferraillage', l => l.resultat?.ferraillage?.choix]] },
   { cle: 'poutres', label: 'Poutres', synthese: 'poutres',
-    cols: [['Niveau', l => l.niveau], ['Section', l => dim(l.entree.b_cm, l.entree.h_cm)], ['Portée (m)', l => l.entree.portee_m, 'n'],
+    cols: [['Niveau', l => l.niveau], ['Catégorie', l => CATEGORIE[l.entree.categorie || 'poutre']], ['Section', l => dim(l.entree.b_cm, l.entree.h_cm)], ['Portée (m)', l => l.entree.portee_m, 'n'],
            ['Mu (kN.m)', l => l.entree.mu_knm, 'n'], ['As (cm²)', l => l.resultat?.as_retenue_cm2, 'n'], ['Ferraillage', l => l.resultat?.ferraillage?.choix]] },
   { cle: 'semelles', label: 'Semelles', synthese: 'semelles_isolees',
     cols: [['Poteau', l => dim(l.entree.a_poteau_cm, l.entree.b_poteau_cm)], ['Ns (kN)', l => l.entree.ns_kn, 'n'], ['Nu (kN)', l => l.entree.nu_kn, 'n'],
@@ -280,7 +280,13 @@ const FAMILLES = [
     cols: [['Niveau', l => l.niveau], ['L × e', l => l.entree.longueur_m != null ? `${l.entree.longueur_m} m × ${l.entree.ep_cm ?? '?'} cm` : null],
            ['N (kN)', l => l.entree.n_kn, 'n'], ['M (kN.m)', l => l.entree.m_knm, 'n'], ['σmax (MPa)', l => l.resultat?.sigma_max_mpa, 'n'],
            ['As rive (cm²)', l => l.resultat?.as_rive_cm2, 'n']] },
+  { cle: 'dalles', label: 'Dalles', synthese: 'dalles', facultative: true,
+    cols: [['Niveau', l => l.niveau], ['lx × ly (m)', l => dim(l.entree.lx_m, l.entree.ly_m)], ['e (cm)', l => l.entree.h_cm, 'n'],
+           ['g / q (kN/m²)', l => l.entree.g_sup_kn_m2 != null ? `${l.entree.g_sup_kn_m2} / ${l.entree.q_kn_m2 ?? '?'}` : null],
+           ['As x (cm²/m)', l => l.resultat?.resultats?.x_travee?.as_retenue_cm2_m, 'n'],
+           ['Armatures', l => l.resultat?.treillis?.designation || l.resultat?.resultats?.x_travee?.ferraillage?.choix]] },
 ];
+const CATEGORIE = { poutre: 'Poutre', longrine: 'Longrine', chainage: 'Chaînage' };
 const STATUTS = { verifie: 'Vérifié', a_revoir: 'À revoir', incomplet: 'Incomplet', erreur: 'Erreur' };
 function dim(a, b) { return a != null && b != null ? `${a} × ${b}` : null; }
 
@@ -326,6 +332,7 @@ function tabProjet() {
     <div class="export" id="rb-dxf-res"></div>
   </div>
 </div>
+<div class="card" id="rb-fond-carte" hidden><h2>Fondations</h2><div class="fondations" id="rb-fond"></div></div>
 <div class="card" id="rb-3d-carte" hidden><h2>Vue 3D du modèle</h2><div class="vue3d" id="rb-3d"></div></div>
 <div class="card"><h2>Résultats</h2><div class="result" id="rb-res">${vide('projet', 'Lisez le modèle, puis lancez le calcul : chaque élément est dimensionné et vérifié.')}</div></div></div>`,
     init() {
@@ -375,6 +382,14 @@ function tabProjet() {
             vue.v3d = vue.v3d || window.Vue3D($('rb-3d'));
             vue.v3d.charger(o);
           }
+          if (window.Fondations) {
+            $('rb-fond-carte').hidden = false;
+            vue.fond = vue.fond || window.Fondations($('rb-fond'), (quoi) => {
+              if (quoi !== 'couches') vue.v3d?.charger(vue.modele.ossature);
+              if (vue.lot && !vue.perime) { vue.perime = true; toast('Fondations modifiées : relancez « Calculer tout le modèle ».'); }
+            });
+            vue.fond.charger(o);
+          }
           const total = o.resume.poteaux + o.resume.poutres + o.resume.semelles + o.resume.voiles;
           $('rb-res').innerHTML = vide('projet', `${total} éléments prêts. Lancez « Calculer tout le modèle ».`);
         } catch (e) { afficherErreur(el, e, {}, 'Lecture du modèle impossible. '); }
@@ -409,8 +424,9 @@ function tabProjet() {
         try {
           exiger(CH_PROJET, ['sigma_sol_bar']);
           const payload = { poteaux: o.poteaux, poutres: o.poutres, semelles: o.semelles, voiles: o.voiles,
+            dalles: vue.fond ? vue.fond.dallesFondation() : [],
             materiaux: { fc28_mpa: +$('rb-fc').value, fe_mpa: +$('rb-fe').value, sigma_sol_bar: +$('rb-sol').value, fissuration: $('rb-fis').value } };
-          vue.compte = false;
+          vue.compte = false; vue.perime = false;
           vue.lot = await api('/api/engine/lot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           vue.famille = FAMILLES.find(f => vue.lot[f.cle].some(l => l.statut !== 'verifie'))?.cle || 'poteaux';
           dessiner();
@@ -424,12 +440,16 @@ function tabProjet() {
         if (!vue.lot) return;
         let n = 0;
         for (const f of FAMILLES) {
-          state[f.synthese] = vue.lot[f.cle].filter(l => l.resultat).map(l => ({
+          const liste = (vue.lot[f.cle] || []).filter(l => l.resultat && (f.cle !== 'dalles' || l.resultat.resultats)).map(l => ({
             ...l.resultat, nom: l.nom, niveau: l.niveau,
-            ...(f.cle === 'poteaux' ? { nu_kn: l.entree.nu_kn, mx_knm: l.entree.mx_knm, my_knm: l.entree.my_knm } : {}),
-            ...(f.cle === 'poutres' ? { mu_knm: l.entree.mu_knm } : {}),
+            ...(f.cle === 'poteaux' ? { nu_kn: l.entree.nu_kn, mx_knm: l.entree.mx_knm, my_knm: l.entree.my_knm, role: l.entree.role } : {}),
+            ...(f.cle === 'poutres' ? { mu_knm: l.entree.mu_knm, categorie: l.entree.categorie } : {}),
+            ...(f.cle === 'semelles' ? { fut: l.entree.fut } : {}),
+            ...(f.cle === 'dalles' ? { role: l.entree.role } : {}),
           }));
-          n += state[f.synthese].length;
+          // les dalles calculées une à une (écran « Dalles et balcons ») restent dans la synthèse
+          state[f.synthese] = f.cle === 'dalles' ? (state.dalles || []).filter(d => d.role !== 'fondation').concat(liste) : liste;
+          n += liste.length;
         }
         state.lot = vue.lot;
         state.trame = { x: vue.modele?.ossature?.trame_x_m || [], y: vue.modele?.ossature?.trame_y_m || [] };
@@ -477,7 +497,7 @@ function tabProjet() {
         const lot = vue.lot, s = lot.resume;
         const fam = FAMILLES.find(f => f.cle === vue.famille);
         const lignes = lot[fam.cle].filter(l => !vue.aRevoir || l.statut !== 'verifie');
-        const onglets = FAMILLES.map(f => {
+        const onglets = FAMILLES.filter(f => !f.facultative || lot[f.cle]?.length).map(f => {
           const pb = lot[f.cle].filter(l => l.statut !== 'verifie').length;
           return `<button class="onglet ${f.cle === vue.famille ? 'actif' : ''}" data-famille="${f.cle}">${f.label} <span class="compte">${lot[f.cle].length}</span>${pb ? `<span class="alerte" title="${pb} à revoir">${pb}</span>` : ''}</button>`;
         }).join('');
