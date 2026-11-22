@@ -47,7 +47,7 @@ def test_cadres_poutre_passent_en_ha10_si_ha8_trop_serres():
 def test_types_regroupent_les_elements_identiques(simulation):
     _, lot = simulation
     n = pf.nomenclature(lot)
-    assert {f: len(t) for f, t in n["types"].items()} == {"poteaux": 2, "poutres": 4, "semelles": 3, "voiles": 2}
+    assert {f: len(t) for f, t in n["types"].items()} == {"poteaux": 2, "poutres": 4, "semelles": 3, "voiles": 2, "dalles": 0}
     assert sum(len(t["lignes"]) for liste in n["types"].values() for t in liste) == 124
     assert n["ecartes"] == []
     s3 = next(t for t in n["types"]["semelles"] if t["elements"] == ["S B2"])   # semelle centrale, seule de son type

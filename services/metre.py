@@ -21,17 +21,31 @@ import math
 from collections import OrderedDict
 from typing import Dict, List, Optional
 
+from common import CATEGORIES_POUTRE, aire_polygone
 from plans_ferraillage import nomenclature, poids_ml
 
 LONGUEUR_COMMERCIALE_M = 12.0   # longueur usuelle des barres HA livrées au Maroc ; paramètre, pas une valeur normative
 
-FAMILLES = OrderedDict([("poteaux", "Poteaux"), ("poutres", "Poutres"), ("semelles", "Semelles"), ("voiles", "Voiles")])
+FAMILLES = OrderedDict([("poteaux", "Poteaux"), ("poutres", "Poutres"), ("semelles", "Semelles"), ("voiles", "Voiles"),
+                        ("dalles", "Dalles")])
+
+
+def rubrique(fam: str, e: dict) -> str:
+    """Rubrique du métré : la famille, précisée par la catégorie (longrines, chaînages, fûts, dalles de fondation)."""
+    if fam == "poutres":
+        return CATEGORIES_POUTRE.get(e.get("categorie") or "poutre", CATEGORIES_POUTRE["poutre"])["pluriel"]
+    if fam == "poteaux" and e.get("role") == "fut":
+        return "Fûts"
+    if fam == "dalles" and e.get("role") == "fondation":
+        return "Dalles de fondation"
+    return FAMILLES[fam]
 
 
 def usage(designation: str) -> str:
     """Usage d'une position de la nomenclature, d'après sa désignation."""
     d = designation.lower()
-    for mot, nom in (("cadre", "Cadres"), ("épingle", "Épingles"), ("attente", "Attentes"), ("montage", "Montage"),
+    for mot, nom in (("treillis", "Treillis"), ("cadre", "Cadres"), ("épingle", "Épingles"), ("attente", "Attentes"),
+                     ("montage", "Montage"),
                      ("potelet", "Potelets"), ("verticale", "Verticales"), ("horizontale", "Horizontales"),
                      ("nappe", "Nappes")):
         if mot in d:
@@ -60,6 +74,20 @@ def _section_et_volume(fam: str, e: dict, r: Optional[dict]) -> tuple:
         if None in (l, ep, h):
             return (None, h, None)
         return (f"{l:g} m × {ep:g}", h, l * ep / 100 * h)
+    if fam == "dalles":
+        # surface : contour du panneau s'il est connu (dalle en L comprise), sinon lx × ly ; × épaisseur
+        h = e.get("h_cm")
+        if e.get("contour_m") and len(e["contour_m"]) >= 3:
+            aire = aire_polygone(e["contour_m"])
+        elif all(e.get(k) is not None for k in ("xmin_m", "xmax_m", "ymin_m", "ymax_m")):
+            aire = (e["xmax_m"] - e["xmin_m"]) * (e["ymax_m"] - e["ymin_m"])
+        elif e.get("lx_m") is not None and e.get("ly_m") is not None:
+            aire = e["lx_m"] * e["ly_m"]
+        else:
+            aire = None
+        if h is None or not aire:
+            return (None, None, None)
+        return (f"{aire:.2f} m² × {h:g}", None, aire * h / 100)
     return (None, None, None)
 
 
@@ -83,7 +111,7 @@ def metre(lot: dict, longueur_commerciale_m: float = LONGUEUR_COMMERCIALE_M) -> 
             if vol is None:
                 sans_beton.append(f"{nom_fam[:-1]} {l.get('nom')}{' · ' + l['niveau'] if l.get('niveau') else ''}")
             lignes.append({
-                "famille": fam, "nom": l.get("nom"), "axe": l.get("axe"), "niveau": l.get("niveau"),
+                "famille": fam, "rubrique": rubrique(fam, e), "nom": l.get("nom"), "axe": l.get("axe"), "niveau": l.get("niveau"),
                 "type": t["code"] if t else None, "statut": l.get("statut"),
                 "section": section, "longueur_m": longueur, "beton_m3": round(vol, 4) if vol is not None else None,
                 "principal": f"{principal['nombre']} HA{principal['diametre_mm']}" if principal else None,
@@ -100,14 +128,14 @@ def metre(lot: dict, longueur_commerciale_m: float = LONGUEUR_COMMERCIALE_M) -> 
                 "ratio_kg_m3": round(kg_tot / vol, 1) if t and vol else None,
             })
 
-    # récapitulatif par famille
+    # récapitulatif par rubrique (famille précisée par la catégorie : longrines, chaînages, fûts…)
+    rubrique_type = {(fam, t["code"]): rubrique(fam, t["rep"].get("entree") or {})
+                     for fam, liste in nomen["types"].items() for t in liste}
     familles = []
-    for fam, nom_fam in FAMILLES.items():
-        ls = [x for x in lignes if x["famille"] == fam]
-        if not ls:
-            continue
+    for nom_fam in OrderedDict.fromkeys(x["rubrique"] for x in lignes):
+        ls = [x for x in lignes if x["rubrique"] == nom_fam]
         par_usage: Dict[str, float] = OrderedDict()
-        for x in (n for n in nomen["lignes"] if n["famille"] == fam):
+        for x in (n for n in nomen["lignes"] if rubrique_type.get((n["famille"], n["type"])) == nom_fam):
             u = usage(x["designation"])
             par_usage[u] = round(par_usage.get(u, 0) + x["poids_kg"], 1)
         beton = round(sum(x["beton_m3"] or 0 for x in ls), 3)
@@ -138,6 +166,8 @@ def metre(lot: dict, longueur_commerciale_m: float = LONGUEUR_COMMERCIALE_M) -> 
         s["part_pct"] = round(100 * s["poids_kg"] / acier_total, 1) if acier_total else 0.0
 
     beton_total = round(sum(f["beton_m3"] for f in familles), 3)
+    non_comptes = list(OrderedDict.fromkeys(nc for liste in nomen["types"].values() for t in liste
+                                            for nc in t.get("non_comptes") or []))
     beton_arme = sum(x["beton_m3"] or 0 for x in lignes if x["acier_kg"] is not None)
     return {
         "lignes": lignes, "familles": familles,
@@ -157,5 +187,7 @@ def metre(lot: dict, longueur_commerciale_m: float = LONGUEUR_COMMERCIALE_M) -> 
             "arrondi supérieur, sans optimisation des chutes.",
             "Épingles : non prévues par les dispositions constructives retenues ; à ajouter si l'ingénieur en dispose.",
             "Éléments non vérifiés : béton compté, acier non compté (ferraillage à reprendre).",
-        ],
+            "Dalles : béton = surface du contour × épaisseur ; nappes inférieures sur le contour − 2 enrobages, "
+            "crochets de 10 Ø compris.",
+        ] + non_comptes,
     }

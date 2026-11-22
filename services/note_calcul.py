@@ -31,6 +31,7 @@ import base64
 import pathlib
 
 from tex_mathml import mathml
+from common import CATEGORIES_POUTRE, ROLES_POTEAU, cote_niveau
 
 POLICES = pathlib.Path(__file__).resolve().parent / "polices"
 
@@ -177,6 +178,20 @@ def grouper(elements: List[dict], cle, prefixe: str, verif) -> List[dict]:
     for n, g in enumerate(groupes.values(), start=1):
         g["code"] = f"{prefixe}{n}"
         out.append(g)
+    return out
+
+
+def grouper_par(elements: List[dict], champ: str, table: dict, defaut: str, cle, verif) -> List[dict]:
+    """Types regroupés par catégorie (poutre / longrine / chaînage, poteau / fût), chacun avec son préfixe."""
+    cats: "OrderedDict[str, List[dict]]" = OrderedDict()
+    for e in elements:
+        cats.setdefault(e.get(champ) if e.get(champ) in table else defaut, []).append(e)
+    out = []
+    for c in sorted(cats, key=list(table).index):
+        pre = table[c]["prefixe"]
+        for t in grouper(cats[c], cle, pre, verif):
+            t["prefixe"], t["categorie"] = pre, c
+            out.append(t)
     return out
 
 
@@ -613,12 +628,16 @@ def section_poteaux(liste: List[dict], m: dict) -> str:
            "<p>Nous vérifions en complément leur résistance en flexion composée sous les moments issus du modèle.</p>"]
     if not liste:
         return "".join(out + ["<p>Aucun poteau calculé.</p>"])
-    types = grouper(liste, lambda p: (p.get("a_cm"), p.get("b_cm"), (p.get("ferraillage") or {}).get("choix")), "P", ok_poteau)
+    types = grouper_par(liste, "role", ROLES_POTEAU, "poteau",
+                        lambda p: (p.get("a_cm"), p.get("b_cm"), (p.get("ferraillage") or {}).get("choix")), ok_poteau)
+    if any(t["categorie"] == "fut" for t in types):
+        out.append("<p>Les fûts (F), tronçons de poteau entre la semelle et le plancher bas, sont justifiés comme les poteaux, "
+                   "avec la longueur de flambement de leur propre hauteur.</p>")
     lignes = []
     for t in types:
         e = max(t["elements"], key=lambda p: p.get("nu_rapport") or 0)
         lignes.append([t["code"], f"{fr(e.get('a_cm'), 0)} × {fr(e.get('b_cm'), 0)}", str(len(t["elements"])),
-                       esc(reperes(t, "P")), esc(niveaux(t)), fr(e.get("nu_kn"), 0), fr(e.get("nu_lim_kn_avec_as_fournie"), 0),
+                       esc(reperes(t, t["prefixe"])), esc(niveaux(t)), fr(e.get("nu_kn"), 0), fr(e.get("nu_lim_kn_avec_as_fournie"), 0),
                        fr(e.get("nu_rapport"), 2), esc((e.get("ferraillage") or {}).get("choix")), etat(t["ok"])])
     out.append("<p>Les poteaux de même section et de même ferraillage sont regroupés en types :</p>")
     out.append(tableau(["Type", ent("a × b", "cm"), "Nb", "Repères", "Niveaux", ent(im("N_u") + " max", "kN"),
@@ -667,13 +686,21 @@ def section_poutres(liste: List[dict], m: dict) -> str:
            "en conséquence. Les barres retenues tiennent dans la largeur de la poutre, en un ou deux lits.</p>"]
     if not liste:
         return "".join(out + ["<p>Aucune poutre calculée.</p>"])
-    types = grouper(liste, lambda p: (p.get("b_cm"), p.get("h_cm"), (p.get("ferraillage") or {}).get("choix")), "Pt", ok_poutre)
+    types = grouper_par(liste, "categorie", CATEGORIES_POUTRE, "poutre",
+                        lambda p: (p.get("b_cm"), p.get("h_cm"), (p.get("ferraillage") or {}).get("choix")), ok_poutre)
+    autres = [CATEGORIES_POUTRE[c]["pluriel"].lower() + f" ({CATEGORIES_POUTRE[c]['prefixe']})"
+              for c in ("longrine", "chainage") if any(t["categorie"] == c for t in types)]
+    if autres:
+        out.append(f"<p>Les {' et les '.join(autres)} sont dimensionnés de la même façon, sous les efforts du modèle. "
+                   "La catégorie de chaque élément vient du nom de sa section dans le modèle ou de sa position (une longrine relie "
+                   "deux semelles ; un chaînage ne porte pas de plancher). Une éventuelle vérification spécifique des longrines "
+                   "de liaison sous séisme n'est pas faite par l'application.</p>")
     lignes = []
     for t in types:
         e = max(t["elements"], key=lambda p: p.get("as_retenue_cm2") or 0)
         els, tau = e.get("els") or {}, e.get("effort_tranchant") or {}
         lignes.append([t["code"], f"{fr(e.get('b_cm'), 0)} × {fr(e.get('h_cm'), 0)}", str(len(t["elements"])),
-                       esc(reperes(t, "Pt")), esc(niveaux(t)),
+                       esc(reperes(t, t["prefixe"])), esc(niveaux(t)),
                        fr(e.get("mu_knm"), 1) if e.get("mu_knm") is not None else "—", fr(e.get("as_retenue_cm2")),
                        esc((e.get("ferraillage") or {}).get("choix")),
                        f"{fr(els.get('sigma_st_mpa'), 0)} / {fr(els.get('sigma_st_lim_mpa'), 0)}",
@@ -682,7 +709,8 @@ def section_poutres(liste: List[dict], m: dict) -> str:
     out.append(tableau(["Type", ent("b × h", "cm"), "Nb", "Repères", "Niveaux", ent(im("M_u"), "kN·m"), ent(im("A_s"), "cm²"),
                         "Ferraillage", ent(im(r"\sigma_{st} / \overline{\sigma}_{st}"), "MPa"), ent(im(r"\tau_u / \overline{\tau}_u"), "MPa"), "État"],
                        lignes, ["", "c", "c", "el", "", "n", "n", "", "n", "n", "c"],
-                       largeurs=[5, 9, 4, 14, 11, 8, 7, 11, 10, 11, 10], titre="Types de poutres"))
+                       largeurs=[5, 9, 4, 14, 11, 8, 7, 11, 10, 11, 10],
+                       titre="Types de poutres" + (", longrines et chaînages" if autres else "")))
     p = max(liste, key=lambda x: x.get("mu_knm") or x.get("as_retenue_cm2") or 0)
     els, tau = p.get("els") or {}, p.get("effort_tranchant") or {}
     b, d = (p.get("b_cm") or 0) / 100, p.get("d_m") or 0
@@ -720,14 +748,29 @@ def section_semelles(liste: List[dict], m: dict) -> str:
     if not liste:
         return "".join(out + ["<p>Aucune semelle calculée.</p>"])
     types = grouper(liste, lambda s: (s.get("A_m"), s.get("B_m"), s.get("H_m"), s.get("acier_x"), s.get("acier_y")), "S", ok_semelle)
+
+    def ns_fut(t):
+        zs = sorted({round((e.get("fut") or {}).get("z_haut_m"), 3) for e in t["elements"]
+                     if (e.get("fut") or {}).get("z_haut_m") is not None})
+        return cote_niveau(zs[0]) if len(zs) == 1 else ("variable" if zs else "—")
+    avec_futs = any((e.get("fut") or {}).get("z_haut_m") is not None for e in liste)
     lignes = []
     for t in types:
         e = max(t["elements"], key=lambda s: s.get("nu_kn_utilise") or 0)
         lignes.append([t["code"], str(len(t["elements"])), esc(reperes(t, "S")), fr(e.get("A_m")), fr(e.get("B_m")), fr(e.get("H_m")),
-                       fr(e.get("sigma_max_bar"), 2), esc(e.get("acier_x")), esc(e.get("acier_y")), etat(t["ok"])])
+                       fr(e.get("sigma_max_bar"), 2), esc(e.get("acier_x")), esc(e.get("acier_y"))]
+                      + ([ns_fut(t)] if avec_futs else []) + [etat(t["ok"])])
     out.append(tableau(["Type", "Nb", "Repères", ent(im("A"), "m"), ent(im("B"), "m"), ent(im("H"), "m"), ent(im(r"\sigma_{\max}"), "bar"),
-                        "Nappe X", "Nappe Y", "État"], lignes, ["", "c", "el", "n", "n", "n", "n", "", "", "c"],
-                       largeurs=[6, 5, 23, 8, 8, 8, 9, 11, 11, 11], titre="Types de semelles"))
+                        "Nappe X", "Nappe Y"] + ([ent("N.S. fût", "m")] if avec_futs else []) + ["État"],
+                       lignes, ["", "c", "el", "n", "n", "n", "n", "", ""] + (["n"] if avec_futs else []) + ["c"],
+                       largeurs=([6, 5, 20, 7, 7, 7, 8, 10, 10, 9, 11] if avec_futs else [6, 5, 23, 8, 8, 8, 9, 11, 11, 11]),
+                       titre="Types de semelles"))
+    if avec_futs:
+        modelises = [e for e in liste if (e.get("fut") or {}).get("modelise")]
+        out.append("<p>N.S. fût : niveau supérieur du fût de poteau au-dessus de chaque semelle, en m (Z du modèle, ±0,00 = Z 0). "
+                   + ("Les fûts sont modélisés entre la semelle et le plancher bas. " if modelises else
+                      "Les fûts ne sont pas modélisés : le poteau part de l'appui du modèle à ce niveau, et la hauteur du fût "
+                      "dépend du niveau d'assise des semelles (rapport géotechnique). ") + "</p>")
     s = max(liste, key=lambda x: x.get("nu_kn_utilise") or 0)
     po = s.get("poinconnement") or {}
     out.append(f"<h4>Exemple de calcul : semelle la plus chargée, {esc(_nom(s, 0, 'S'))}</h4>")
@@ -809,13 +852,20 @@ def section_dalles(dalles: List[dict], balcons: List[dict], m: dict) -> str:
                    "tranchant lorsque " + im(r"\tau_u \le 0{,}05 \, f_{c28}") + " (A.5.2,2). Le calcul de la flèche est dispensé si "
                    + im(r"h / l_x \ge M_{tx} / (20 \, M_{0x})") + " et " + im(r"A_x / (b \, d) \le 2 / f_e")
                    + " (B.7.5) ; sinon, la dalle est signalée et sa flèche doit être calculée.</p>")
+        if any(d.get("niveau") == "Fondation" or d.get("role") == "fondation" for d in dalles):
+            out.append("<p>Les dalles de fondation (DF) du plancher bas sont calculées comme des dalles pleines portées par les "
+                       "longrines de leur contour ; le sol sous-jacent n'est pas compté comme appui, du côté de la sécurité. "
+                       "Lorsqu'un treillis soudé remplace les nappes inférieures, sa section est comparée à la section retenue "
+                       "dans chaque direction, sa maille à l'espacement maximal et son diamètre à " + im("h/10") + " (A.8.2,42).</p>")
         lignes = []
         for i, d in enumerate(dalles):
             r = d.get("resultats") or {}
             lignes.append([esc(d.get("nom") or f"D{i + 1}"), esc(d.get("niveau") or "—"),
                            f"{fr(d.get('lx_m'))} × {fr(d.get('ly_m'))}", fr(d.get("h_cm"), 0), fr(d.get("rho"), 2),
                            fr((d.get("charges") or {}).get("pu_kn_m2"), 2), fr(d.get("m0x_knm"), 2),
-                           _choix(r.get("x_travee")), _choix(r.get("y_travee")), _choix(r.get("appuis")), etat(bool(d.get("verifie")))])
+                           esc((d.get("treillis") or {}).get("designation")) if d.get("treillis") else _choix(r.get("x_travee")),
+                           "idem" if d.get("treillis") else _choix(r.get("y_travee")), _choix(r.get("appuis")),
+                           etat(bool(d.get("verifie")) and (d.get("treillis") or {}).get("ok", True))])
         out.append(tableau(["Repère", "Niv.", ent(im(r"l_x \times l_y"), "m"), ent("h", "cm"), im(r"\rho"), ent(im("p_u"), "kN/m²"),
                             ent(im("M_{0x}"), "kN·m/m"), "Travée x", "Travée y", "Chapeaux", "État"],
                            lignes, ["", "", "c", "n", "n", "n", "n", "", "", "", "c"],
@@ -945,37 +995,29 @@ def quantites(inp: dict) -> str:
         out.append("<p>Les quantités sont établies à partir du calcul de tout le modèle (écran « Projet Robot »). "
                    "Elles ne sont pas disponibles pour les éléments calculés un par un.</p>")
         return "".join(out)
-    vol = {}
-    for fam, f in (("poteaux", lambda e, r: (e.get("a_cm") or 0) * (e.get("b_cm") or 0) / 1e4 * (e.get("hauteur_m") or 3.0)),
-                   ("poutres", lambda e, r: (e.get("b_cm") or 0) * (e.get("h_cm") or 0) / 1e4 * (e.get("portee_m") or 0)),
-                   ("semelles", lambda e, r: (r.get("A_m") or 0) * (r.get("B_m") or 0) * (r.get("H_m") or 0)),
-                   ("voiles", lambda e, r: (e.get("longueur_m") or 0) * (e.get("ep_cm") or 0) / 100 * (e.get("hauteur_m") or 3.0))):
-        vol[fam] = sum(f(l.get("entree") or {}, l.get("resultat") or {}) for l in lot.get(fam) or [] if l.get("resultat"))
     try:
-        from plans_ferraillage import nomenclature, poids_ml
-        nomen = nomenclature(lot)
-        acier = {fam: sum(x["poids_kg"] for x in nomen["lignes"] if x["famille"] == fam) for fam in vol}
-    except Exception:   # quantités d'acier indisponibles : le béton reste utile
-        nomen, acier = None, {}
-    noms = {"poteaux": "Poteaux", "poutres": "Poutres", "semelles": "Semelles", "voiles": "Voiles"}
-    lignes = []
-    for fam, v in vol.items():
-        if not v:
-            continue
-        kg = acier.get(fam)
-        lignes.append([noms[fam], fr(v, 2), fr(kg, 0) if kg is not None else "—", fr(kg / v, 0) if kg and v else "—"])
-    tv, ta = sum(vol.values()), sum(acier.values()) if acier else None
-    lignes.append(["<b>Total</b>", f"<b>{fr(tv, 2)}</b>", f"<b>{fr(ta, 0)}</b>" if ta else "—", f"<b>{fr(ta / tv, 0)}</b>" if ta and tv else "—"])
+        from metre import metre
+        m = metre(lot)
+    except Exception:   # quantités indisponibles : la note reste utile
+        out.append("<p>Les quantités n'ont pas pu être établies pour ce modèle.</p>")
+        return "".join(out)
+    lignes = [[esc(f["famille"]), fr(f["beton_m3"], 2), fr(f["acier_kg"], 0) if f["acier_kg"] else "—",
+               fr(f["ratio_kg_m3"], 0) if f["ratio_kg_m3"] else "—"] for f in m["familles"] if f["beton_m3"] or f["acier_kg"]]
+    lignes.append(["<b>Total</b>", f"<b>{fr(m['beton_total_m3'], 2)}</b>", f"<b>{fr(m['acier_total_kg'], 0)}</b>",
+                   f"<b>{fr(m['ratio_kg_m3'], 0)}</b>" if m["ratio_kg_m3"] else "—"])
     out.append("<p>Le tableau ci-dessous récapitule les quantités de béton et d'acier des éléments étudiés. Elles sont "
                "données à titre indicatif pour l'estimation et ne remplacent pas le métré des plans d'exécution.</p>")
-    out.append(tableau(["Famille", ent("Béton", "m³"), ent("Acier", "kg"), ent("Ratio", "kg/m³")], lignes, ["", "n", "n", "n"],
-                       largeurs=[37, 21, 21, 21], titre="Quantités de béton et d'acier par famille"))
-    if nomen:
-        out.append(tableau(["Diamètre", ent("Masse linéique", "kg/m"), ent("Poids", "kg")],
-                           [[f"HA{d}", fr(poids_ml(d), 3), fr(kg, 1)] for d, kg in nomen["par_diametre_kg"].items()],
+    out.append(tableau(["Rubrique", ent("Béton", "m³"), ent("Acier", "kg"), ent("Ratio", "kg/m³")], lignes, ["", "n", "n", "n"],
+                       largeurs=[37, 21, 21, 21], titre="Quantités de béton et d'acier par rubrique"))
+    if m["par_diametre"]:
+        out.append(tableau(["Diamètre", ent("Longueur", "m"), ent("Poids", "kg")],
+                           [[f"HA{d['diametre_mm']}", fr(d["longueur_m"], 1), fr(d["poids_kg"], 1)] for d in m["par_diametre"]],
                            ["", "n", "n"], largeurs=[37, 31, 32], titre="Acier par diamètre"))
-    out.append('<p class="note">Béton : volumes géométriques des éléments calculés (hors dalles, longrines et escaliers). '
-               "Acier : longueurs façonnées des éléments vérifiés, recouvrements et crochets compris (voir la nomenclature des plans).</p>")
+    notes = ["Béton : volumes géométriques des éléments calculés (escaliers non compris)."] + m["hypotheses"][1:]
+    if m["sans_beton"]:
+        notes.append("Sans béton (dimension manquante) : " + ", ".join(m["sans_beton"][:12])
+                     + (f" et {len(m['sans_beton']) - 12} autres" if len(m["sans_beton"]) > 12 else "") + ".")
+    out.append('<p class="note">' + " ".join(esc(n) for n in notes) + "</p>")
     return "".join(out)
 
 

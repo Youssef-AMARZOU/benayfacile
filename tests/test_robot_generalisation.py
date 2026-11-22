@@ -176,7 +176,8 @@ def test_chaine_complete_sur_le_modele_irregulier():
     lot = e.lot(e.LotInput(**{k: o[k] for k in ("poteaux", "poutres", "semelles", "voiles")}))
     assert lot["resume"]["erreur"] == 0
     doc, res = pf.dessiner_plans(lot, {"projet": "Irrégulier"}, {}, o["trame_x_m"], o["trame_y_m"], dalles=o["dalles"])
-    assert res["niveaux_dessines"] == ["Fondation", "Sous-sol", "Étage 1", "Étage 2"]      # ordre des altitudes
+    assert res["niveaux_dessines"] == ["Sous-sol", "Étage 1", "Étage 2"]      # ordre des altitudes
+    assert res["planches"][0] == "Plan de fondation" and res["planches_fondation"] == 1       # le niveau Fondation
     polys = [p for p in doc.modelspace().query("LWPOLYLINE") if p.dxf.layer == "BETON_PROPRETE"]
     assert any(len(p) == 6 for p in polys)                                                # panneau en L dessiné tel quel
     m = M.metre(lot)

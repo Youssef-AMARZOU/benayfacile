@@ -137,6 +137,6 @@ def test_plans_un_detail_par_element():
     lot_ = e.lot(e.LotInput(**{k: o[k] for k in ("poteaux", "poutres", "semelles", "voiles")}))
     _, par_type = pf.dessiner_plans(lot_, PROJET, {}, o["trame_x_m"], o["trame_y_m"])
     _, par_el = pf.dessiner_plans(lot_, PROJET, {}, o["trame_x_m"], o["trame_y_m"], par_element=True)
-    assert par_el["types"] == {f: len(lot_[f]) for f in ("poteaux", "poutres", "semelles", "voiles")}
+    assert par_el["types"] == {f: len(lot_[f]) for f in ("poteaux", "poutres", "semelles", "voiles", "dalles")}
     assert par_el["poids_total_kg"] == pytest.approx(par_type["poids_total_kg"], abs=0.5)   # même acier
     assert len(par_el["planches"]) > len(par_type["planches"])

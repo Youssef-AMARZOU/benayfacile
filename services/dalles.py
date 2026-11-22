@@ -37,6 +37,35 @@ def section_bar(d_mm: float) -> float:
     return math.pi * (d_mm / 10.0) ** 2 / 4.0
 
 
+def section_treillis_cm2_m(d_mm: float, maille_cm: float) -> float:
+    """Section d'un treillis soudé par mètre, dans une direction : un fil de Ø d tous les « maille » cm.
+    Ex. TS Ø6 maille 15 : π × 0,6² / 4 × 100 / 15 = 1,885 cm²/m (géométrie, pas une valeur normative)."""
+    if not d_mm or not maille_cm or d_mm <= 0 or maille_cm <= 0:
+        raise ValueError("treillis : Ø et maille doivent être positifs")
+    return section_bar(d_mm) * 100.0 / maille_cm
+
+
+def controle_treillis(res: dict, d_mm: float, maille_cm: float) -> dict:
+    """Treillis soudé à la place des nappes inférieures calculées (travée x et y) d'une dalle :
+    section ≥ section retenue dans chaque direction, maille ≤ espacement maximal (A.8.2,42), Ø ≤ h/10 (A.8.2,42).
+    Les chapeaux (appuis) restent en barres HA, comme calculés."""
+    a_ts = section_treillis_cm2_m(d_mm, maille_cm)
+    st = res["espacements_max_cm"]
+    r = res["resultats"]
+    controles = [
+        {"nom": "Ax treillis ≥ As travée x", "valeur": round(a_ts, 2), "limite": r["x_travee"]["as_retenue_cm2_m"],
+         "ok": a_ts + 1e-9 >= r["x_travee"]["as_retenue_cm2_m"]},
+        {"nom": "Ay treillis ≥ As travée y", "valeur": round(a_ts, 2), "limite": r["y_travee"]["as_retenue_cm2_m"],
+         "ok": a_ts + 1e-9 >= r["y_travee"]["as_retenue_cm2_m"]},
+        {"nom": "maille ≤ espacement maximal (A.8.2,42)", "valeur": maille_cm,
+         "limite": min(st["principal"], st["repartition"]), "ok": maille_cm <= min(st["principal"], st["repartition"]) + 1e-9},
+        {"nom": "Ø ≤ h/10 (A.8.2,42)", "valeur": d_mm, "limite": res["h_cm"], "ok": d_mm <= res["h_cm"] + 1e-9},
+    ]
+    return {"designation": f"TS Ø{d_mm:g} maille {maille_cm:g} × {maille_cm:g} cm", "diametre_mm": d_mm,
+            "maille_cm": maille_cm, "as_cm2_m": round(a_ts, 2), "controles": controles,
+            "ok": all(c["ok"] for c in controles)}
+
+
 # ───────────────────────── règles de ferraillage des dalles ─────────────────────────
 
 def espacements_max_cm(h_cm: float, fissuration: str) -> Dict[str, float]:
